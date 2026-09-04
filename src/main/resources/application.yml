@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: talkdoc-backend
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+talkdoc:
+  session:
+    ttl: 2h
+  sign:
+    confidence-threshold: 0.75
+  ai:
+    provider: ${TALKDOC_AI_PROVIDER:mock}      # mock | gemini
+    timeout: 15s
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: https://generativelanguage.googleapis.com/v1beta
+      models:
+        stt: ${GEMINI_STT_MODEL:gemini-2.5-flash}
+        llm: ${GEMINI_LLM_MODEL:gemini-2.5-flash}
+        tts: ${GEMINI_TTS_MODEL:gemini-2.5-flash-preview-tts}
+  sign-ai:
+    mode: ${TALKDOC_SIGN_AI_MODE:mock}         # mock | http
+    base-url: ${TALKDOC_SIGN_AI_URL:http://localhost:8000}
+    timeout: 10s
+  websocket:
+    allowed-origins: ${TALKDOC_WS_ORIGINS:*}

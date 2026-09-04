@@ -1,0 +1,16 @@
+# Gemini-backed profile: real STT/LLM/TTS calls via Google Gemini API.
+# Activate with: ./gradlew bootRun --args='--spring.profiles.active=gemini'
+# (talkdoc.sign-ai.mode still defaults to mock unless TALKDOC_SIGN_AI_MODE=http;
+#  the sign-language recogniser is a separate service, see docs/ai-service-contract.md)
+#
+# Required environment variables:
+#   GEMINI_API_KEY      - Google Gemini API key (required, no default)
+#   GEMINI_STT_MODEL     - optional, defaults to gemini-2.5-flash
+#   GEMINI_LLM_MODEL      - optional, defaults to gemini-2.5-flash
+#   GEMINI_TTS_MODEL      - optional, defaults to gemini-2.5-flash-preview-tts
+
+talkdoc:
+  ai:
+    provider: gemini
+    gemini:
+      api-key: ${GEMINI_API_KEY:}

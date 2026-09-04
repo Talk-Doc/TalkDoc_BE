@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: talkdoc-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - talkdoc-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    container_name: talkdoc-app
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+      SERVER_PORT: 8080
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TALKDOC_AI_PROVIDER: ${TALKDOC_AI_PROVIDER:-mock}
+      TALKDOC_SIGN_AI_MODE: ${TALKDOC_SIGN_AI_MODE:-mock}
+      TALKDOC_SIGN_AI_URL: ${TALKDOC_SIGN_AI_URL:-http://host.docker.internal:8000}
+    ports:
+      - "8080:8080"
+    profiles: ["app"]
+
+volumes:
+  talkdoc-redis-data:

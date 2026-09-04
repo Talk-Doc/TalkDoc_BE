@@ -1,0 +1,10 @@
+talkdoc:
+  ai:
+    provider: mock
+  sign-ai:
+    mode: mock
+  session:
+    ttl: 10m
+logging:
+  level:
+    com.talkdoc: DEBUG

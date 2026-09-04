@@ -1,0 +1,20 @@
+# Local development profile.
+# Activate with: ./gradlew bootRun --args='--spring.profiles.active=local'
+# Everything not listed here falls back to the defaults in application.yml.
+
+logging:
+  level:
+    com.talkdoc: DEBUG
+    org.springframework.web: INFO
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
+talkdoc:
+  ai:
+    provider: mock
+  sign-ai:
+    mode: mock
