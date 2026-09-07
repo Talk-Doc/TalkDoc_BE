@@ -36,7 +36,12 @@ public record TalkDocProperties(
         }
     }
 
-    public record Gemini(String apiKey, String baseUrl, Models models) {
+    /**
+     * @param thinkingLevel Gemini 3.x 의 thinkingConfig.thinkingLevel ("low" 권장). 비우면 모델 기본값(수천 토큰의
+     *                      thinking → 호출당 20~30초, maxOutputTokens 소진)을 그대로 쓴다. tts 모델에는 적용하지 않는다.
+     */
+    public record Gemini(String apiKey, String baseUrl, Models models, String thinkingLevel) {
+        // 생성자를 하나만 둬야 Spring Boot 가 생성자 바인딩으로 값을 채운다 (둘이면 전부 null 이 됨).
         public record Models(String stt, String llm, String tts) {
         }
     }

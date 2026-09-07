@@ -54,10 +54,11 @@ public class AnswerController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
             summary = "답변 확정",
-            description = "라벨(및 선택적으로 answer 문장)로 답변을 확정하고 대기 중인 질문을 해제합니다. patient_token 필요."
+            description = "라벨(및 선택적으로 answer 문장)로 답변을 확정하고 대기 중인 질문을 해제합니다. " +
+                    "answer가 있으면 labels는 비워도 됩니다(텍스트 답변). patient_token 필요."
     )
     public Conversation confirm(@PathVariable String sessionId, @Valid @RequestBody ConfirmRequest request) {
-        return answerService.confirm(sessionId, request.labels(), request.answer());
+        return answerService.confirm(sessionId, request.labelsOrEmpty(), request.answer());
     }
 
     @PatchMapping("/{answerId}")

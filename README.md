@@ -74,6 +74,21 @@ curl http://localhost:8080/actuator/health
 docker compose --profile app up -d --build
 ```
 
+## 실제 AI 연동으로 실행하기 (Gemini + TalkDoc_AI)
+
+Mock 대신 실제 음성 인식/문장 생성/음성 합성(Gemini)과 수어 인식(TalkDoc_AI)을 붙여서 돌리려면:
+
+```bash
+cp .env.example .env            # GEMINI_API_KEY 채우기
+docker compose up -d redis      # 또는 redis-server
+(cd ../TalkDoc_AI && scripts/run.sh)   # 수어 인식 서비스, 8000 포트 (models/ 에 모델 파일 필요)
+./scripts/run-real.sh           # gemini 프로필 + sign-ai http 모드로 bootRun
+```
+
+`run-real.sh` 는 `.env` 를 읽어 `TALKDOC_AI_PROVIDER=gemini`, `TALKDOC_SIGN_AI_MODE=http` 로 실행합니다.
+프론트(TalkDoc_FE)는 `npm run dev` 그대로 두면 됩니다. 수어 인식 서비스 구성은
+[../TalkDoc_AI/README.md](../TalkDoc_AI/README.md) 참고.
+
 ## 환경 변수
 
 `application.yml`에 정의된 것과 동일한 이름입니다. 전체 목록은 [.env.example](.env.example)
@@ -86,8 +101,9 @@ docker compose --profile app up -d --build
 | `SERVER_PORT` | `8080` | 애플리케이션 HTTP 포트 |
 | `TALKDOC_AI_PROVIDER` | `mock` | STT/LLM/TTS 제공자. `mock` \| `gemini` |
 | `GEMINI_API_KEY` | (없음) | Gemini API 키. `TALKDOC_AI_PROVIDER=gemini`일 때 필수 |
-| `GEMINI_STT_MODEL` | `gemini-2.5-flash` | STT에 사용할 Gemini 모델 |
-| `GEMINI_LLM_MODEL` | `gemini-2.5-flash` | 의도 분석/문장 재구성 등에 사용할 Gemini 모델 |
+| `GEMINI_STT_MODEL` | `gemini-3.7-flash` | STT에 사용할 Gemini 모델 (lite 계열은 받아쓰기 정확도가 낮음) |
+| `GEMINI_LLM_MODEL` | `gemini-3.5-flash-lite` | 의도 분석/문장 재구성/요약용. thinking 없는 lite 가 1초 내 응답 |
+| `GEMINI_THINKING_LEVEL` | `low` | Gemini 3.x thinking 수준. 비우면 모델 기본값(호출당 20~30초, 출력 토큰 소진) |
 | `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | TTS에 사용할 Gemini 모델 |
 | `TALKDOC_SIGN_AI_MODE` | `mock` | 수어 인식 연동 방식. `mock` \| `http` |
 | `TALKDOC_SIGN_AI_URL` | `http://localhost:8000` | `mode=http`일 때 TalkDoc_AI 서비스 base URL |

@@ -38,7 +38,11 @@ public class HttpSignRecognitionClient implements SignRecognitionClient {
 
     public HttpSignRecognitionClient(TalkDocProperties properties, RestClient.Builder builder) {
         TalkDocProperties.SignAi cfg = properties.signAi();
-        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(cfg.timeout()).build();
+        // uvicorn 등 HTTP/1.1 전용 서버는 JDK HttpClient 기본값(h2c 업그레이드 시도)을 거부하므로 1.1로 고정한다.
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(cfg.timeout())
+                .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(cfg.timeout());
         this.restClient = builder.baseUrl(cfg.baseUrl()).requestFactory(factory).build();

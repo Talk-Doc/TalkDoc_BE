@@ -52,6 +52,9 @@ public class AnswerService {
     public PreviewResponse preview(String sessionId, List<String> labels) {
         Session session = sessionService.requireActive(sessionId);
         PendingQuestion question = requireCurrentQuestion(session);
+        if (labels.isEmpty()) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "labels는 비어 있을 수 없습니다.");
+        }
         validateLabels(labels);
 
         List<Conversation> prior = conversationRepository.findAll(sessionId);
@@ -67,6 +70,9 @@ public class AnswerService {
 
         String answer = answerText;
         if (answer == null || answer.isBlank()) {
+            if (labels.isEmpty()) {
+                throw new ApiException(ErrorCode.INVALID_REQUEST, "labels 또는 answer 중 하나는 필수입니다.");
+            }
             List<Conversation> prior = conversationRepository.findAll(sessionId);
             answer = llmClient.composeAnswer(question.text(), labels, prior);
         }
