@@ -38,6 +38,7 @@ class QuestionServiceTest {
     private SessionRepository sessionRepository;
     private SttClient sttClient;
     private LlmClient llmClient;
+    private AnswerModeResolver answerModeResolver;
     private SessionEventPublisher eventPublisher;
     private QuestionService questionService;
 
@@ -49,8 +50,9 @@ class QuestionServiceTest {
         sessionRepository = mock(SessionRepository.class);
         sttClient = mock(SttClient.class);
         llmClient = mock(LlmClient.class);
+        answerModeResolver = new StaticAnswerModeResolver();
         eventPublisher = mock(SessionEventPublisher.class);
-        questionService = new QuestionService(sessionService, sessionRepository, sttClient, llmClient, eventPublisher);
+        questionService = new QuestionService(sessionService, sessionRepository, sttClient, llmClient, answerModeResolver, eventPublisher);
 
         Session activeSession = new Session(SESSION_ID, SessionStatus.ACTIVE, Instant.now(), null);
         when(sessionService.requireActive(SESSION_ID)).thenReturn(activeSession);
@@ -153,5 +155,27 @@ class QuestionServiceTest {
         assertThat(eventCaptor.getValue().type()).isEqualTo(EventType.QUESTION_POSTED);
         assertThat(eventCaptor.getValue().sessionId()).isEqualTo(SESSION_ID);
         assertThat(eventCaptor.getValue().payload()).isEqualTo(questionCaptor.getValue());
+    }
+
+    @Test
+    void postQuestion_signRequiredIntent_hasNoCardOptions() {
+        when(llmClient.analyzeIntent(anyString())).thenReturn(IntentAnalysis.of(Intent.BODY_LOCATION));
+
+        QuestionResponse response = questionService.postQuestion(SESSION_ID, null, "어디가 아프세요?");
+
+        assertThat(response.answerMode()).isEqualTo(AnswerMode.SIGN_REQUIRED);
+        assertThat(response.cardOptions()).isEmpty();
+    }
+
+    @Test
+    void postQuestion_durationIntent_returnsCardOptions() {
+        when(llmClient.analyzeIntent("언제부터 아팠어요?")).thenReturn(IntentAnalysis.of(Intent.DURATION));
+
+        QuestionResponse response = questionService.postQuestion(SESSION_ID, null, "언제부터 아팠어요?");
+
+        assertThat(response.intent()).isEqualTo(Intent.DURATION);
+        assertThat(response.answerMode()).isEqualTo(AnswerMode.CARD_SELECT);
+        assertThat(response.cardOptions()).containsExactly("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상");
+        assertThat(response.candidates()).isEmpty();
     }
 }

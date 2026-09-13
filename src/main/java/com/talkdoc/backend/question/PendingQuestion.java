@@ -9,6 +9,8 @@ public record PendingQuestion(
         String text,
         List<Intent> intents,
         List<String> candidates,
+        AnswerMode answerMode,
+        List<String> cardOptions,
         Instant askedAt
 ) {
 

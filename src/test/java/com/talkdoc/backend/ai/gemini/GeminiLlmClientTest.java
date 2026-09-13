@@ -92,6 +92,8 @@ class GeminiLlmClientTest {
         assertThat(llm.parseIntents("{\"intents\":[]}").intents()).containsExactly(Intent.OTHER);
         assertThat(llm.parseIntents("{\"intents\":[\"FOO\",\"history_state\"]}").intents())
                 .containsExactly(Intent.HISTORY_STATE);
+        assertThat(llm.parseIntents("{\"intents\":[\"DURATION\"]}").intents())
+                .containsExactly(Intent.DURATION);
     }
 
     private static String candidate(String text) {

@@ -31,6 +31,8 @@ class MockClientsTest {
         IntentAnalysis other = llm.analyzeIntent("어제 뭐 드셨어요?");
         assertThat(other.intents()).containsExactly(Intent.OTHER);
         assertThat(other.candidates()).isEmpty();
+        // "아프" would also match the symptom keywords, but duration wording must win outright.
+        assertThat(llm.analyzeIntent("언제부터 아팠어요?").intents()).containsExactly(Intent.DURATION);
         assertThat(llm.composeAnswer("q", List.of("배", "아프다"), List.of())).isEqualTo("배가 아파요.");
     }
 
