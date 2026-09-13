@@ -39,7 +39,7 @@ class GeminiLlmClientTest {
                 new TalkDocProperties.Ai("gemini", Duration.ofSeconds(5),
                         new TalkDocProperties.Gemini("test-key", "https://gemini.test/v1beta",
                                 new TalkDocProperties.Gemini.Models("stt-m", "llm-m", "tts-m"), null)),
-                new TalkDocProperties.SignAi("mock", "http://localhost:8000", Duration.ofSeconds(5)),
+                new TalkDocProperties.SignAi("mock", "http://localhost:5001", Duration.ofSeconds(5), Duration.ofSeconds(60), null, 2),
                 new TalkDocProperties.Websocket("*"));
         GeminiClient client = new GeminiClient(props, builder, true, false);
         llm = new GeminiLlmClient(client, props);

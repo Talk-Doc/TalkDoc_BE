@@ -12,6 +12,7 @@ public enum ErrorCode {
     SESSION_CLOSED(HttpStatus.CONFLICT, "이미 종료된 세션입니다."),
     FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "업로드 파일이 너무 큽니다."),
     UNSUPPORTED_MEDIA(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 파일 형식입니다."),
+    SIGN_VIDEO_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "영상을 인식할 수 없습니다. 다시 촬영해주세요."),
     STT_FAILED(HttpStatus.BAD_GATEWAY, "음성 인식에 실패했습니다."),
     LLM_FAILED(HttpStatus.BAD_GATEWAY, "언어 모델 호출에 실패했습니다."),
     SIGN_AI_FAILED(HttpStatus.BAD_GATEWAY, "수어 인식 서비스 호출에 실패했습니다."),

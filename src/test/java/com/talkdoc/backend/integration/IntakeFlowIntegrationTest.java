@@ -110,18 +110,32 @@ class IntakeFlowIntegrationTest {
         assertThat(patientWs.next().get("type").asText()).isEqualTo("QUESTION_POSTED");
         assertThat(doctorWs.next().get("type").asText()).isEqualTo("QUESTION_POSTED");
 
-        // 3. patient sign (mock returns 배/아프다)
-        MultiValueMap<String, Object> sForm = new LinkedMultiValueMap<>();
-        sForm.add("video", videoPart(new byte[2048], "video/webm"));
-        ResponseEntity<String> sRes = http().post().uri("/api/sessions/{id}/sign", sessionId)
-                .header("Authorization", "Bearer " + patient)
-                .contentType(MediaType.MULTIPART_FORM_DATA).body(sForm)
-                .retrieve().toEntity(String.class);
-        assertThat(sRes.getStatusCode()).as(sRes.getBody()).isEqualTo(HttpStatus.OK);
-        JsonNode sign = json(sRes);
-        assertThat(toList(sign.get("accepted_labels"))).containsExactly("배", "아프다");
+        // 3. patient sign: TalkDoc-VisionAI returns one word per video, so one call per word.
+        //    The default mock prediction is 배 (0.94); the second word uses the ;labels= debug override.
+        JsonNode sign = postSign(sessionId, patient, "video/webm", 3.5);
+        assertThat(toList(sign.get("accepted_labels"))).containsExactly("배");
         assertThat(sign.get("all_accepted").asBoolean()).isTrue();
+        assertThat(sign.get("sign").get("label").asText()).isEqualTo("배");
+        assertThat(sign.get("sign").get("accepted").asBoolean()).isTrue();
+        assertThat(sign.get("sign").has("reason")).isFalse(); // null 은 직렬화되지 않음
+        assertThat(sign.get("signs")).hasSize(1);
         assertThat(sign.get("signs").get(0).get("accepted").asBoolean()).isTrue();
+        assertThat(sign.get("model_version").asText()).isEqualTo("mock");
+        assertThat(sign.get("request_id").asText()).isNotBlank();
+        assertThat(sign.get("question_id").asText()).isEqualTo(question.get("question_id").asText());
+        assertThat(toList(sign.get("candidates"))).contains("배", "아프다");
+
+        JsonNode sign2 = postSign(sessionId, patient, "video/webm;labels=\"아프다\"", null);
+        assertThat(toList(sign2.get("accepted_labels"))).containsExactly("아프다");
+        assertThat(sign2.get("all_accepted").asBoolean()).isTrue();
+
+        // duration 은 0 < d <= 20 이어야 한다
+        MultiValueMap<String, Object> badForm = new LinkedMultiValueMap<>();
+        badForm.add("video", videoPart(new byte[1024], "video/webm"));
+        assertThat(http().post().uri("/api/sessions/{id}/sign?duration=25", sessionId)
+                .header("Authorization", "Bearer " + patient)
+                .contentType(MediaType.MULTIPART_FORM_DATA).body(badForm)
+                .retrieve().toEntity(String.class).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
         // 4. preview
         ResponseEntity<String> pRes = http().post().uri("/api/sessions/{id}/answer/preview", sessionId)
@@ -218,16 +232,22 @@ class IntakeFlowIntegrationTest {
                 .header("Authorization", "Bearer " + doctor)
                 .contentType(MediaType.MULTIPART_FORM_DATA).body(qForm).retrieve().toEntity(String.class);
 
-        // mock override: label outside the SYMPTOM candidates ("머리") must be rejected
-        MultiValueMap<String, Object> sForm = new LinkedMultiValueMap<>();
-        sForm.add("video", videoPart(new byte[1024], "video/webm;labels=\"머리,기침\""));
-        ResponseEntity<String> sRes = http().post().uri("/api/sessions/{id}/sign", sessionId)
-                .header("Authorization", "Bearer " + patient)
-                .contentType(MediaType.MULTIPART_FORM_DATA).body(sForm).retrieve().toEntity(String.class);
-        assertThat(sRes.getStatusCode()).as(sRes.getBody()).isEqualTo(HttpStatus.OK);
-        JsonNode sign = json(sRes);
+        // mock override: confidence below talkdoc.sign.confidence-threshold (0.75) must not be accepted.
+        // The label itself is kept even though it is outside the SYMPTOM candidates: candidates never
+        // force-limit the prediction (TalkDoc-VisionAI contract).
+        JsonNode sign = postSign(sessionId, patient, "video/webm;labels=\"머리,기침\";confidence=0.5", null);
         assertThat(sign.get("all_accepted").asBoolean()).isFalse();
-        assertThat(toList(sign.get("accepted_labels"))).containsExactly("기침");
+        assertThat(toList(sign.get("accepted_labels"))).isEmpty();
+        assertThat(sign.get("sign").get("label").asText()).isEqualTo("머리");
+        assertThat(sign.get("sign").get("reason").asText()).isEqualTo("LOW_CONFIDENCE");
+        assertThat(sign.get("signs")).hasSize(1);
+
+        // hands not visible → no label at all, signs empty, reason tells the frontend to re-record
+        JsonNode noHands = postSign(sessionId, patient, "video/webm;reason=INSUFFICIENT_LANDMARKS", null);
+        assertThat(noHands.get("all_accepted").asBoolean()).isFalse();
+        assertThat(noHands.get("signs")).isEmpty();
+        assertThat(noHands.get("sign").has("label")).isFalse();
+        assertThat(noHands.get("sign").get("reason").asText()).isEqualTo("INSUFFICIENT_LANDMARKS");
 
         // preview without a valid label is rejected
         ResponseEntity<String> bad = http().post().uri("/api/sessions/{id}/answer/preview", sessionId)
@@ -241,6 +261,20 @@ class IntakeFlowIntegrationTest {
     }
 
     // ---- helpers ------------------------------------------------------------------------------
+
+    /** POSTs one sign video; contentType may carry the mock's debug parameters (";labels=", ";reason="). */
+    private JsonNode postSign(String sessionId, String patientToken, String contentType, Double duration)
+            throws Exception {
+        MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+        form.add("video", videoPart(new byte[2048], contentType));
+        String uri = "/api/sessions/" + sessionId + "/sign" + (duration == null ? "" : "?duration=" + duration);
+        ResponseEntity<String> res = http().post().uri(uri)
+                .header("Authorization", "Bearer " + patientToken)
+                .contentType(MediaType.MULTIPART_FORM_DATA).body(form)
+                .retrieve().toEntity(String.class);
+        assertThat(res.getStatusCode()).as(res.getBody()).isEqualTo(HttpStatus.OK);
+        return json(res);
+    }
 
     /** Multipart part with an explicit raw Content-Type header (parameters are passed through untouched). */
     private static HttpEntity<NamedBytes> videoPart(byte[] bytes, String contentType) {

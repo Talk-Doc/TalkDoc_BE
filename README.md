@@ -31,17 +31,17 @@
               │
               ▼
       ┌───────────────────────────────────┐
-      │  TalkDoc_AI (별도 Python 서비스)      │
-      │  수어 인식 (HTTP 위임)                │
+      │  TalkDoc-VisionAI (Flask, 5001)    │
+      │  수어 인식 POST /predict             │
       └───────────────────────────────────┘
 ```
 
 - 저장소는 **Redis 하나만** 사용합니다. 세션 단위 임시 데이터를 TTL 2시간으로 보관하며,
   세션 종료 시 즉시 삭제합니다.
 - STT/LLM/TTS는 Google Gemini API를 호출합니다 (`talkdoc.ai.provider=gemini`).
-- 수어 인식은 별도 파이썬 서비스인 `TalkDoc_AI`에 HTTP로 위임합니다
-  (`talkdoc.sign-ai.mode=http`). 계약은 [docs/ai-service-contract.md](docs/ai-service-contract.md)
-  참고.
+- 수어 인식은 팀의 실제 Vision AI 서비스 `TalkDoc-VisionAI`(Flask, 5001 포트)에 HTTP로
+  위임합니다 (`talkdoc.sign-ai.mode=http`). 계약은
+  [docs/ai-service-contract.md](docs/ai-service-contract.md) 참고.
 - 두 외부 연동 모두 Mock 어댑터가 있어(`provider=mock`, `mode=mock`) API 키/외부 서비스
   없이도 전체 흐름을 로컬에서 동작시킬 수 있습니다.
 
@@ -74,20 +74,21 @@ curl http://localhost:8080/actuator/health
 docker compose --profile app up -d --build
 ```
 
-## 실제 AI 연동으로 실행하기 (Gemini + TalkDoc_AI)
+## 실제 AI 연동으로 실행하기 (Gemini + TalkDoc-VisionAI)
 
-Mock 대신 실제 음성 인식/문장 생성/음성 합성(Gemini)과 수어 인식(TalkDoc_AI)을 붙여서 돌리려면:
+Mock 대신 실제 음성 인식/문장 생성/음성 합성(Gemini)과 수어 인식(TalkDoc-VisionAI)을 붙여서 돌리려면:
 
 ```bash
 cp .env.example .env            # GEMINI_API_KEY 채우기
 docker compose up -d redis      # 또는 redis-server
-(cd ../TalkDoc_AI && scripts/run.sh)   # 수어 인식 서비스, 8000 포트 (models/ 에 모델 파일 필요)
+(cd ../TalkDoc-VisionAI && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt)  # 최초 1회
+(cd ../TalkDoc-VisionAI && .venv/bin/python app.py)   # 수어 인식 서버, 5001 포트
 ./scripts/run-real.sh           # gemini 프로필 + sign-ai http 모드로 bootRun
 ```
 
 `run-real.sh` 는 `.env` 를 읽어 `TALKDOC_AI_PROVIDER=gemini`, `TALKDOC_SIGN_AI_MODE=http` 로 실행합니다.
 프론트(TalkDoc_FE)는 `npm run dev` 그대로 두면 됩니다. 수어 인식 서비스 구성은
-[../TalkDoc_AI/README.md](../TalkDoc_AI/README.md) 참고.
+[../TalkDoc-VisionAI/README.md](../TalkDoc-VisionAI/README.md) 참고.
 
 ## 환경 변수
 
@@ -106,11 +107,13 @@ docker compose up -d redis      # 또는 redis-server
 | `GEMINI_THINKING_LEVEL` | `low` | Gemini 3.x thinking 수준. 비우면 모델 기본값(호출당 20~30초, 출력 토큰 소진) |
 | `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | TTS에 사용할 Gemini 모델 |
 | `TALKDOC_SIGN_AI_MODE` | `mock` | 수어 인식 연동 방식. `mock` \| `http` |
-| `TALKDOC_SIGN_AI_URL` | `http://localhost:8000` | `mode=http`일 때 TalkDoc_AI 서비스 base URL |
+| `TALKDOC_SIGN_AI_URL` | `http://localhost:5001` | `mode=http`일 때 TalkDoc-VisionAI base URL |
+| `TALKDOC_SIGN_AI_TOKEN` | (없음) | TalkDoc-VisionAI 서비스 토큰. 기본은 비워두면 미전송이며, 운영에서는 VisionAI의 `VISION_API_TOKEN`과 같은 값으로 설정 |
 | `TALKDOC_WS_ORIGINS` | `*` | WebSocket 허용 Origin (콤마 구분, `*`는 전체 허용) |
 
 그 외 `talkdoc.session.ttl`(2h), `talkdoc.sign.confidence-threshold`(0.75),
-`talkdoc.ai.timeout`(15s), `talkdoc.sign-ai.timeout`(10s)은 환경 변수가 아닌
+`talkdoc.ai.timeout`(15s), `talkdoc.sign-ai.connect-timeout`(5s),
+`talkdoc.sign-ai.read-timeout`(60s), `talkdoc.sign-ai.max-retries`(2)는 환경 변수가 아닌
 `application.yml`의 고정 기본값입니다 (필요 시 YAML 직접 수정).
 
 ## 프로필 설명
@@ -132,7 +135,7 @@ docker compose up -d redis      # 또는 redis-server
 |--------|------|------|------|----------------|
 | POST | `/api/sessions` | 공개 | 세션 생성 | `session_id`, `doctor_token`, `patient_token`, `created_at`, `patient_join_path` |
 | POST | `/api/sessions/{sessionId}/question` | DOCTOR | 질문 등록 (multipart `audio` 또는 `text` 필드) | `question_id`, `text`, `intent`, `intents`, `candidates`, `supported`, `asked_at` |
-| POST | `/api/sessions/{sessionId}/sign` | PATIENT | 수어 영상 업로드/인식 (multipart `video`, 선택 `intent`) | `question_id`, `intents`, `candidates`, `signs[]`(`label`,`confidence`,`accepted`), `all_accepted`, `accepted_labels` |
+| POST | `/api/sessions/{sessionId}/sign` | PATIENT | 수어 영상 인식 — 영상 1개당 단어 1개 (multipart `video`, 선택 `duration` 초) | `question_id`, `intents`, `candidates`, `sign`(`label`,`confidence`,`accepted`,`reason`), `signs[]`(0~1개, 호환용), `all_accepted`, `accepted_labels`, `model_version`, `request_id`, `processing_ms` |
 | POST | `/api/sessions/{sessionId}/answer/preview` | PATIENT | 인식된 라벨로 답변 문장 미리보기 (`{labels}`) | `question_id`, `labels`, `answer` |
 | POST | `/api/sessions/{sessionId}/answer/confirm` | PATIENT | 답변 확정 (`{labels, answer?}`) | Conversation: `answer_id`, `question_id`, `question`, `intents`, `signs`, `answer`, `confirmed_at` |
 | PATCH | `/api/sessions/{sessionId}/answer/{answerId}` | DOCTOR \| PATIENT | 확정된 답변 텍스트 수정 (`{answer}`) | Conversation |
@@ -199,6 +202,7 @@ docker compose up -d redis      # 또는 redis-server
 | `SESSION_CLOSED` | 409 | 이미 종료된 세션입니다. |
 | `FILE_TOO_LARGE` | 413 | 업로드 파일이 너무 큽니다. |
 | `UNSUPPORTED_MEDIA` | 415 | 지원하지 않는 파일 형식입니다. |
+| `SIGN_VIDEO_REJECTED` | 422 | 영상을 인식할 수 없습니다. 다시 촬영해주세요. |
 | `STT_FAILED` | 502 | 음성 인식에 실패했습니다. |
 | `LLM_FAILED` | 502 | 언어 모델 호출에 실패했습니다. |
 | `SIGN_AI_FAILED` | 502 | 수어 인식 서비스 호출에 실패했습니다. |
@@ -250,7 +254,7 @@ TalkDoc_BE/
 ├── Dockerfile
 ├── .env.example
 ├── docs/
-│   └── ai-service-contract.md   # TalkDoc_AI(Python) 연동 계약
+│   └── ai-service-contract.md   # TalkDoc-VisionAI(Flask) 연동 계약
 ├── scripts/
 │   ├── e2e.sh                   # curl 기반 E2E 스모크 테스트
 │   └── ws-client.mjs            # WebSocket 이벤트 확인용 CLI

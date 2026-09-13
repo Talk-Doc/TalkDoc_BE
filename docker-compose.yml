@@ -24,7 +24,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TALKDOC_AI_PROVIDER: ${TALKDOC_AI_PROVIDER:-mock}
       TALKDOC_SIGN_AI_MODE: ${TALKDOC_SIGN_AI_MODE:-mock}
-      TALKDOC_SIGN_AI_URL: ${TALKDOC_SIGN_AI_URL:-http://host.docker.internal:8000}
+      TALKDOC_SIGN_AI_URL: ${TALKDOC_SIGN_AI_URL:-http://host.docker.internal:5001}
     ports:
       - "8080:8080"
     profiles: ["app"]
