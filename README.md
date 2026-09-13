@@ -115,7 +115,7 @@ docker compose --profile app up -d --build
 | Method | Path | 역할 | 설명 | 주요 응답 필드 |
 |--------|------|------|------|----------------|
 | POST | `/api/sessions` | 공개 | 세션 생성 | `session_id`, `doctor_token`, `patient_token`, `created_at`, `patient_join_path` |
-| POST | `/api/sessions/{sessionId}/question` | DOCTOR | 질문 등록 (multipart `audio` 또는 `text` 필드) | `question_id`, `text`, `intent`, `intents`, `candidates`, `supported`, `asked_at` |
+| POST | `/api/sessions/{sessionId}/question` | DOCTOR | 질문 등록 (multipart `audio` 또는 `text` 필드) | `question_id`, `text`, `intent`, `intents`, `candidates`, `supported`, `answer_mode`, `card_options`, `asked_at` |
 | POST | `/api/sessions/{sessionId}/sign` | PATIENT | 수어 영상 업로드/인식 (multipart `video`, 선택 `intent`) | `question_id`, `intents`, `candidates`, `signs[]`(`label`,`confidence`,`accepted`), `all_accepted`, `accepted_labels` |
 | POST | `/api/sessions/{sessionId}/answer/preview` | PATIENT | 인식된 라벨로 답변 문장 미리보기 (`{labels}`) | `question_id`, `labels`, `answer` |
 | POST | `/api/sessions/{sessionId}/answer/confirm` | PATIENT | 답변 확정 (`{labels, answer?}`) | Conversation: `answer_id`, `question_id`, `question`, `intents`, `signs`, `answer`, `confirmed_at` |
@@ -125,6 +125,11 @@ docker compose --profile app up -d --build
 | GET | `/api/sessions/{sessionId}/answer/{answerId}/tts` | DOCTOR (선택) | 답변 음성 합성 | `audio/wav` 스트림 |
 | DELETE | `/api/sessions/{sessionId}` | DOCTOR | 세션 종료/삭제 | 204 No Content |
 | GET | `/ws/sessions/{sessionId}?token=` | (토큰 필요) | WebSocket 연결 | 실시간 이벤트 스트림 |
+
+`answer_mode`가 `SIGN_REQUIRED`면 프론트는 수어 촬영 UI를, `CARD_SELECT`면 `card_options`를
+선택 카드로 보여줍니다(옆에 "직접 작성"/"수어로 답변" 전환 버튼 포함). 카드를 고르면
+`/sign`·`/answer/preview` 단계 없이 바로 `/answer/confirm`에 `{"labels": [], "answer": "<카드 문구>"}`로
+확정하면 됩니다. 어떤 Intent가 카드형인지는 `StaticAnswerModeResolver`의 고정 테이블로 정해집니다.
 
 ## 인증 방식
 
