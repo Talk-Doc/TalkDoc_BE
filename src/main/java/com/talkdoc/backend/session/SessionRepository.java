@@ -21,8 +21,9 @@ public interface SessionRepository extends TokenResolver {
     void updateCurrentQuestion(String sessionId, PendingQuestion question);
 
     /**
-     * Deletes every key for the session: session hash, both token lookups and the conversations list
-     * (RedisKeys.conversations). Must be a no-op when the session does not exist.
+     * Deletes every key for the session: session hash, both token lookups, the conversations list
+     * (RedisKeys.conversations), the recognitions list and the drafts hash.
+     * Must be a no-op when the session does not exist.
      */
     void delete(String sessionId);
 }

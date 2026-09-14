@@ -3,6 +3,11 @@ package com.talkdoc.backend.question;
 import com.talkdoc.backend.ai.LlmClient;
 import com.talkdoc.backend.ai.SttClient;
 import com.talkdoc.backend.ai.model.IntentAnalysis;
+import com.talkdoc.backend.answer.AnswerDraft;
+import com.talkdoc.backend.answer.AnswerDraftRepository;
+import com.talkdoc.backend.answer.Conversation;
+import com.talkdoc.backend.answer.ConversationRepository;
+import com.talkdoc.backend.answer.DraftStatus;
 import com.talkdoc.backend.common.ApiException;
 import com.talkdoc.backend.common.ErrorCode;
 import com.talkdoc.backend.question.dto.QuestionResponse;
@@ -36,6 +41,8 @@ class QuestionServiceTest {
 
     private SessionService sessionService;
     private SessionRepository sessionRepository;
+    private ConversationRepository conversationRepository;
+    private AnswerDraftRepository draftRepository;
     private SttClient sttClient;
     private LlmClient llmClient;
     private SessionEventPublisher eventPublisher;
@@ -47,13 +54,18 @@ class QuestionServiceTest {
     void setUp() {
         sessionService = mock(SessionService.class);
         sessionRepository = mock(SessionRepository.class);
+        conversationRepository = mock(ConversationRepository.class);
+        draftRepository = mock(AnswerDraftRepository.class);
         sttClient = mock(SttClient.class);
         llmClient = mock(LlmClient.class);
         eventPublisher = mock(SessionEventPublisher.class);
-        questionService = new QuestionService(sessionService, sessionRepository, sttClient, llmClient, eventPublisher);
+        questionService = new QuestionService(sessionService, sessionRepository, conversationRepository,
+                draftRepository, sttClient, llmClient, eventPublisher);
 
         Session activeSession = new Session(SESSION_ID, SessionStatus.ACTIVE, Instant.now(), null);
         when(sessionService.requireActive(SESSION_ID)).thenReturn(activeSession);
+        when(conversationRepository.findAll(SESSION_ID)).thenReturn(List.of());
+        when(draftRepository.findByQuestion(eq(SESSION_ID), anyString())).thenReturn(List.of());
     }
 
     @Test
@@ -153,5 +165,108 @@ class QuestionServiceTest {
         assertThat(eventCaptor.getValue().type()).isEqualTo(EventType.QUESTION_POSTED);
         assertThat(eventCaptor.getValue().sessionId()).isEqualTo(SESSION_ID);
         assertThat(eventCaptor.getValue().payload()).isEqualTo(questionCaptor.getValue());
+    }
+
+    // ---- updateQuestion ------------------------------------------------------------------------
+
+    private static final String QUESTION_ID = "question-1";
+
+    /** Makes the session return a pending question at the given version. */
+    private PendingQuestion pending(int version) {
+        PendingQuestion question = new PendingQuestion(QUESTION_ID, "어디가 아프세요?",
+                List.of(Intent.BODY_LOCATION), Intent.candidatesFor(List.of(Intent.BODY_LOCATION)),
+                Instant.parse("2024-01-01T00:00:00Z"), version, null);
+        when(sessionService.requireActive(SESSION_ID))
+                .thenReturn(new Session(SESSION_ID, SessionStatus.ACTIVE, Instant.now(), question));
+        return question;
+    }
+
+    @Test
+    void postQuestion_startsAtVersionOneWithNoUpdatedAt() {
+        when(llmClient.analyzeIntent(anyString())).thenReturn(IntentAnalysis.of(Intent.BODY_LOCATION));
+
+        QuestionResponse response = questionService.postQuestion(SESSION_ID, null, "어디가 아프세요?");
+
+        assertThat(response.version()).isEqualTo(1);
+        assertThat(response.updatedAt()).isNull();
+    }
+
+    @Test
+    void updateQuestion_incrementsVersionKeepsIdAndPublishesQuestionUpdated() {
+        PendingQuestion current = pending(1);
+        when(llmClient.analyzeIntent("어떤 증상이 있으세요?")).thenReturn(IntentAnalysis.of(Intent.SYMPTOM));
+
+        QuestionResponse response = questionService.updateQuestion(SESSION_ID, QUESTION_ID, "어떤 증상이 있으세요?", 1);
+
+        assertThat(response.questionId()).isEqualTo(QUESTION_ID);
+        assertThat(response.version()).isEqualTo(2);
+        assertThat(response.text()).isEqualTo("어떤 증상이 있으세요?");
+        assertThat(response.intents()).containsExactly(Intent.SYMPTOM);
+        assertThat(response.candidates()).isEqualTo(Intent.candidatesFor(List.of(Intent.SYMPTOM)));
+        assertThat(response.askedAt()).isEqualTo(current.askedAt());
+        assertThat(response.updatedAt()).isNotNull();
+
+        ArgumentCaptor<PendingQuestion> saved = ArgumentCaptor.forClass(PendingQuestion.class);
+        verify(sessionRepository).updateCurrentQuestion(eq(SESSION_ID), saved.capture());
+        assertThat(saved.getValue().version()).isEqualTo(2);
+
+        ArgumentCaptor<SessionEvent> event = ArgumentCaptor.forClass(SessionEvent.class);
+        verify(eventPublisher).publish(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(EventType.QUESTION_UPDATED);
+        assertThat(event.getValue().payload()).isEqualTo(saved.getValue());
+    }
+
+    @Test
+    void updateQuestion_invalidatesOlderOpenDraftsButKeepsOthers() {
+        pending(1);
+        when(llmClient.analyzeIntent(anyString())).thenReturn(IntentAnalysis.of(Intent.SYMPTOM));
+        Instant now = Instant.now();
+        AnswerDraft open = new AnswerDraft("d1", QUESTION_ID, 1, List.of("배"), null, "배요.", 1,
+                DraftStatus.DRAFT, now, now);
+        AnswerDraft confirmed = new AnswerDraft("d2", QUESTION_ID, 1, List.of("배"), null, "배요.", 1,
+                DraftStatus.CONFIRMED, now, now);
+        when(draftRepository.findByQuestion(SESSION_ID, QUESTION_ID)).thenReturn(List.of(open, confirmed));
+
+        questionService.updateQuestion(SESSION_ID, QUESTION_ID, "어떤 증상이 있으세요?", 1);
+
+        ArgumentCaptor<AnswerDraft> saved = ArgumentCaptor.forClass(AnswerDraft.class);
+        verify(draftRepository).save(eq(SESSION_ID), saved.capture());
+        assertThat(saved.getValue().answerId()).isEqualTo("d1");
+        assertThat(saved.getValue().status()).isEqualTo(DraftStatus.INVALIDATED);
+    }
+
+    @Test
+    void updateQuestion_withStaleVersion_throwsVersionConflict() {
+        pending(2);
+
+        assertThatThrownBy(() -> questionService.updateQuestion(SESSION_ID, QUESTION_ID, "다시 묻습니다", 1))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).code()).isEqualTo(ErrorCode.VERSION_CONFLICT);
+                    assertThat(e).hasMessageContaining("현재 버전: 2");
+                });
+        verify(sessionRepository, never()).updateCurrentQuestion(anyString(), any());
+    }
+
+    @Test
+    void updateQuestion_whenQuestionAlreadyConfirmed_throwsQuestionAlreadyAnswered() {
+        when(conversationRepository.findAll(SESSION_ID)).thenReturn(List.of(
+                Conversation.confirmed("a1", QUESTION_ID, "어디가 아프세요?", List.of(Intent.BODY_LOCATION),
+                        List.of("배"), "배요.", Instant.now(), 1)));
+
+        assertThatThrownBy(() -> questionService.updateQuestion(SESSION_ID, QUESTION_ID, "다시 묻습니다", 1))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.QUESTION_ALREADY_ANSWERED);
+    }
+
+    @Test
+    void updateQuestion_whenNoSuchPendingQuestion_throwsQuestionNotFound() {
+        pending(1);
+
+        assertThatThrownBy(() -> questionService.updateQuestion(SESSION_ID, "other-question", "다시 묻습니다", 1))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).code())
+                .isEqualTo(ErrorCode.QUESTION_NOT_FOUND);
     }
 }

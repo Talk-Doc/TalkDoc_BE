@@ -7,11 +7,15 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Response body for {@code POST /api/sessions/{sessionId}/question}. Serialized snake_case
+ * Response body for {@code POST /api/sessions/{sessionId}/question} and
+ * {@code PATCH /api/sessions/{sessionId}/questions/{questionId}}. Serialized snake_case
  * (global Jackson naming strategy): {@code question_id, text, intent, intents, candidates,
- * supported, asked_at}.
+ * supported, asked_at, version, updated_at}.
  *
- * @param intent the primary (first) intent, for clients that only care about one
+ * @param intent    the primary (first) intent, for clients that only care about one
+ * @param version   1 when first posted, incremented on every doctor edit; must be echoed back when
+ *                  previewing/confirming an answer or editing the question again
+ * @param updatedAt time of the last edit, omitted when the question was never edited
  */
 public record QuestionResponse(
         String questionId,
@@ -20,7 +24,9 @@ public record QuestionResponse(
         List<Intent> intents,
         List<String> candidates,
         boolean supported,
-        Instant askedAt
+        Instant askedAt,
+        int version,
+        Instant updatedAt
 ) {
 
     public static QuestionResponse of(PendingQuestion question) {
@@ -31,7 +37,9 @@ public record QuestionResponse(
                 question.intents(),
                 question.candidates(),
                 question.isSupported(),
-                question.askedAt()
+                question.askedAt(),
+                question.version(),
+                question.updatedAt()
         );
     }
 }

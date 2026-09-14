@@ -107,6 +107,8 @@ class IntakeFlowIntegrationTest {
         assertThat(toList(question.get("intents"))).containsExactly("BODY_LOCATION", "SYMPTOM");
         assertThat(toList(question.get("candidates"))).contains("배", "아프다");
         assertThat(question.get("supported").asBoolean()).isTrue();
+        assertThat(question.get("version").asInt()).isEqualTo(1);
+        assertThat(question.has("updated_at")).isFalse();
         assertThat(patientWs.next().get("type").asText()).isEqualTo("QUESTION_POSTED");
         assertThat(doctorWs.next().get("type").asText()).isEqualTo("QUESTION_POSTED");
 
@@ -123,6 +125,8 @@ class IntakeFlowIntegrationTest {
         assertThat(sign.get("model_version").asText()).isEqualTo("mock");
         assertThat(sign.get("request_id").asText()).isNotBlank();
         assertThat(sign.get("question_id").asText()).isEqualTo(question.get("question_id").asText());
+        assertThat(sign.get("question_version").asInt()).isEqualTo(1);
+        assertThat(sign.get("recognition_id").asText()).isNotBlank();
         assertThat(toList(sign.get("candidates"))).contains("배", "아프다");
 
         JsonNode sign2 = postSign(sessionId, patient, "video/webm;labels=\"아프다\"", null);
@@ -169,14 +173,31 @@ class IntakeFlowIntegrationTest {
         assertThat(detail.get("conversations").get(0).get("answer_id").asText()).isEqualTo(answerId);
         assertThat(detail.has("current_question") && !detail.get("current_question").isNull()).isFalse();
 
-        // 7. patch answer
-        ResponseEntity<String> uRes = http().patch().uri("/api/sessions/{id}/answer/{aid}", sessionId, answerId)
+        // 7. patch answer: the doctor may only PROPOSE an edit; the patient's own words stay as confirmed
+        ResponseEntity<String> proposeRes = http().patch().uri("/api/sessions/{id}/answer/{aid}", sessionId, answerId)
                 .header("Authorization", "Bearer " + doctor)
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("answer", "배가 많이 아파요."))
                 .retrieve().toEntity(String.class);
+        assertThat(proposeRes.getStatusCode()).as(proposeRes.getBody()).isEqualTo(HttpStatus.OK);
+        JsonNode proposed = json(proposeRes);
+        assertThat(proposed.get("answer").asText()).isEqualTo("배가 아파요.");   // unchanged
+        assertThat(proposed.get("version").asInt()).isEqualTo(1);
+        assertThat(proposed.get("pending_edit").get("answer").asText()).isEqualTo("배가 많이 아파요.");
+        assertThat(proposed.get("pending_edit").get("proposed_by").asText()).isEqualTo("DOCTOR");
+        assertThat(patientWs.next().get("type").asText()).isEqualTo("ANSWER_CONFIRMED");
+        assertThat(patientWs.next().get("type").asText()).isEqualTo("ANSWER_EDIT_PROPOSED");
+        assertThat(doctorWs.next().get("type").asText()).isEqualTo("ANSWER_EDIT_PROPOSED");
+
+        // the patient re-confirms it, which actually applies the change
+        ResponseEntity<String> uRes = http().patch().uri("/api/sessions/{id}/answer/{aid}", sessionId, answerId)
+                .header("Authorization", "Bearer " + patient)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("answer", "배가 많이 아파요.", "version", 1))
+                .retrieve().toEntity(String.class);
         assertThat(uRes.getStatusCode()).as(uRes.getBody()).isEqualTo(HttpStatus.OK);
         assertThat(json(uRes).get("answer").asText()).isEqualTo("배가 많이 아파요.");
-        assertThat(patientWs.next().get("type").asText()).isEqualTo("ANSWER_CONFIRMED");
+        assertThat(json(uRes).get("version").asInt()).isEqualTo(2);
+        assertThat(json(uRes).get("edited_by").asText()).isEqualTo("PATIENT");
+        assertThat(json(uRes).has("pending_edit")).isFalse();
         assertThat(patientWs.next().get("type").asText()).isEqualTo("ANSWER_UPDATED");
         assertThat(doctorWs.next().get("type").asText()).isEqualTo("ANSWER_UPDATED");
 

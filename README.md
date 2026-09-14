@@ -134,16 +134,32 @@ docker compose up -d redis      # 또는 redis-server
 | Method | Path | 역할 | 설명 | 주요 응답 필드 |
 |--------|------|------|------|----------------|
 | POST | `/api/sessions` | 공개 | 세션 생성 | `session_id`, `doctor_token`, `patient_token`, `created_at`, `patient_join_path` |
-| POST | `/api/sessions/{sessionId}/question` | DOCTOR | 질문 등록 (multipart `audio` 또는 `text` 필드) | `question_id`, `text`, `intent`, `intents`, `candidates`, `supported`, `asked_at` |
-| POST | `/api/sessions/{sessionId}/sign` | PATIENT | 수어 영상 인식 — 영상 1개당 단어 1개 (multipart `video`, 선택 `duration` 초) | `question_id`, `intents`, `candidates`, `sign`(`label`,`confidence`,`accepted`,`reason`), `signs[]`(0~1개, 호환용), `all_accepted`, `accepted_labels`, `model_version`, `request_id`, `processing_ms` |
-| POST | `/api/sessions/{sessionId}/answer/preview` | PATIENT | 인식된 라벨로 답변 문장 미리보기 (`{labels}`) | `question_id`, `labels`, `answer` |
-| POST | `/api/sessions/{sessionId}/answer/confirm` | PATIENT | 답변 확정 (`{labels, answer?}`) | Conversation: `answer_id`, `question_id`, `question`, `intents`, `signs`, `answer`, `confirmed_at` |
-| PATCH | `/api/sessions/{sessionId}/answer/{answerId}` | DOCTOR \| PATIENT | 확정된 답변 텍스트 수정 (`{answer}`) | Conversation |
-| GET | `/api/sessions/{sessionId}` | DOCTOR | 세션 상세 조회 | `session_id`, `status`, `created_at`, `current_question`, `conversations[]` |
+| POST | `/api/sessions/{sessionId}/question` | DOCTOR | 질문 등록 (multipart `audio` 또는 `text` 필드) | `question_id`, `text`, `intent`, `intents`, `candidates`, `supported`, `asked_at`, `version`(=1), `updated_at`(null) |
+| PATCH | `/api/sessions/{sessionId}/questions/{questionId}` | DOCTOR | 질문 텍스트 수정 — 의도 재분석, `version` +1 (`{text, version}`) | POST 질문과 동일 필드 + `version`, `updated_at` |
+| POST | `/api/sessions/{sessionId}/sign` | PATIENT | 수어 영상 인식 — 영상 1개당 단어 1개 (multipart `video`, 선택 `duration` 초) | `question_id`, `intents`, `candidates`, `sign`(`label`,`confidence`,`accepted`,`reason`), `signs[]`(0~1개, 호환용), `all_accepted`, `accepted_labels`, `model_version`, `request_id`, `processing_ms`, `recognition_id`, `question_version` |
+| POST | `/api/sessions/{sessionId}/answer/preview` | PATIENT | 답변 미리보기 및 초안 저장 — 라벨 또는 recognition_id 기반 (`{labels}` 또는 `{question_id, question_version, recognition_ids}`) | `question_id`, `question_version`, `labels`, `answer`, `answer_id`, `version`(=1), `recognition_ids` |
+| POST | `/api/sessions/{sessionId}/answer/confirm` | PATIENT | 답변 확정 — 레거시 라벨 또는 초안 기반 (`{labels, answer?}` 또는 `{answer_id, version, answer?}`) | Conversation: `answer_id`, `question_id`, `question`, `intents`, `signs`, `answer`, `confirmed_at`, `question_version`, `version`, `edited_by`, `edited_at`, `pending_edit` |
+| PATCH | `/api/sessions/{sessionId}/answer/{answerId}` | DOCTOR \| PATIENT | 답변 수정 (`{answer, version?}`) — 의사는 `pending_edit`로 제안만, 환자는 즉시 반영·`version` +1 | Conversation |
+| GET | `/api/sessions/{sessionId}` | DOCTOR \| PATIENT | 세션 상세 조회 — PATIENT는 `drafts`, `recognitions` 추가 수신(재연결 복구용) | `session_id`, `status`, `created_at`, `current_question`(+`question_version`), `conversations[]` |
 | POST | `/api/sessions/{sessionId}/summary` | DOCTOR | 진료 요약 생성 | `summary`, `conversation_count`, `generated_at` |
 | GET | `/api/sessions/{sessionId}/answer/{answerId}/tts` | DOCTOR (선택) | 답변 음성 합성 | `audio/wav` 스트림 |
 | DELETE | `/api/sessions/{sessionId}` | DOCTOR | 세션 종료/삭제 | 204 No Content |
 | GET | `/ws/sessions/{sessionId}?token=` | (토큰 필요) | WebSocket 연결 | 실시간 이벤트 스트림 |
+
+## 질문 버전과 답변 초안
+
+질문을 등록하면 `version=1`로 시작하고, 의사가 `PATCH .../questions/{questionId}`로 텍스트를
+고치면 `version`이 +1 됩니다. 환자가 수어를 인식시키면 각 결과는 `recognition_id`로 세션에
+저장되고(`POST /sign` 응답), `POST /answer/preview`는 이 `recognition_id`들(또는 레거시
+`labels`)로 답변 문장을 만들어 **초안**(`answer_id`, `version=1`)으로 저장합니다. 환자가
+`POST /answer/confirm`을 `answer_id` + `version`으로 호출하면 그 초안이 확정되며, 같은
+호출을 반복해도(중복 확정) 200으로 동일한 답변만 돌려주고 새로 저장하지 않습니다. 의사가
+질문을 수정하면 이전 버전에서 만들어진 미확정 초안은 모두 무효화됩니다(인식 결과 자체는
+유지). 확정된 답변을 의사가 고치고 싶을 때는 `PATCH /answer/{answerId}`로 제안하며, 이는
+바로 반영되지 않고 `pending_edit`로 표시된 채 `ANSWER_EDIT_PROPOSED` 이벤트만 발생합니다 —
+환자가 같은 텍스트로 다시 `PATCH`해야 `version`이 올라가며 실제로 반영됩니다. 레거시 요청
+바디(`labels`, `{labels, answer?}`)는 프론트 호환을 위해 계속 동작합니다. 필드 단위 계약과
+JSON 예시는 [docs/answer-versioning.md](docs/answer-versioning.md) 참고.
 
 ## 인증 방식
 
@@ -172,8 +188,10 @@ docker compose up -d redis      # 또는 redis-server
 | type | 설명 | payload |
 |------|------|---------|
 | `QUESTION_POSTED` | 의사가 질문을 등록함 | PendingQuestion (환자·의사 모두에게 전달) |
+| `QUESTION_UPDATED` | 의사가 질문 텍스트를 수정함(`version` +1) | PendingQuestion |
 | `ANSWER_CONFIRMED` | 환자가 답변을 확정함 | Conversation (의사·환자 모두에게 전달) |
-| `ANSWER_UPDATED` | 확정된 답변 텍스트가 수정됨 | Conversation |
+| `ANSWER_EDIT_PROPOSED` | 의사가 확정된 답변의 수정을 제안함(`pending_edit`) | Conversation |
+| `ANSWER_UPDATED` | 환자가 답변 텍스트 수정을 반영함(`version` +1) | Conversation |
 | `SESSION_CLOSED` | 세션이 종료됨 | `{"session_id": "..."}` (직후 연결이 닫힘) |
 | `PEER_JOINED` | 상대 역할이 접속함 | `{"role": "DOCTOR"|"PATIENT"}` |
 
@@ -198,7 +216,13 @@ docker compose up -d redis      # 또는 redis-server
 | `FORBIDDEN` | 403 | 이 세션 또는 역할로는 접근할 수 없습니다. |
 | `SESSION_NOT_FOUND` | 404 | 세션을 찾을 수 없습니다. |
 | `ANSWER_NOT_FOUND` | 404 | 답변을 찾을 수 없습니다. |
+| `QUESTION_NOT_FOUND` | 404 | 질문을 찾을 수 없습니다. |
+| `DRAFT_NOT_FOUND` | 404 | 답변 초안을 찾을 수 없습니다. |
+| `RECOGNITION_NOT_FOUND` | 404 | 인식 결과를 찾을 수 없습니다. |
 | `NO_PENDING_QUESTION` | 409 | 현재 답변 대기 중인 질문이 없습니다. |
+| `QUESTION_ALREADY_ANSWERED` | 409 | 확정 답변이 있는 질문은 수정할 수 없습니다. |
+| `VERSION_CONFLICT` | 409 | 버전이 일치하지 않습니다. |
+| `DRAFT_INVALIDATED` | 409 | 무효화된 답변 초안입니다. |
 | `SESSION_CLOSED` | 409 | 이미 종료된 세션입니다. |
 | `FILE_TOO_LARGE` | 413 | 업로드 파일이 너무 큽니다. |
 | `UNSUPPORTED_MEDIA` | 415 | 지원하지 않는 파일 형식입니다. |
@@ -220,16 +244,22 @@ docker compose up -d redis
 ./scripts/e2e.sh
 ```
 
-스크립트는 다음을 순서대로 수행합니다: 세션 생성 → 의사 질문 등록(`text` 필드) →
-환자 수어 업로드(더미 영상, Mock 어댑터로 처리) → 답변 미리보기 → 답변 확정 →
-세션 조회 → 진료 요약 생성 → 세션 삭제. 각 단계 응답을 출력하고, HTTP 에러 발생 시
-즉시 비정상 종료합니다.
+스크립트는 다음을 순서대로 수행합니다: (1~8, 레거시 흐름) 세션 생성 → 의사 질문 등록
+(`text` 필드) → 환자 수어 업로드(더미 영상, Mock 어댑터로 처리) → 답변 미리보기 → 답변
+확정 → 세션 조회 → 진료 요약 생성 → 세션 삭제. 이어서 (9~17, 버전/초안 흐름) 새 세션에서
+질문 등록 → 질문 수정(`version` 증가 확인) → 수어 인식 2회(`recognition_id` 수집) →
+`recognition_ids` 기반 미리보기(초안 저장) → `answer_id`+`version`으로 확정 → 동일 확정
+재호출(200, 중복 저장 없음 확인) → 의사의 답변 수정 제안(`pending_edit`) → 환자 재확정으로
+반영(`version` +1) → 환자 세션 조회(`drafts`/`recognitions` 확인) → 세션 삭제까지 진행합니다.
+각 단계 응답을 출력하고, HTTP 에러 발생 시 즉시 비정상 종료합니다.
 
 ## 개인정보·안전 원칙
 
 - **영상/음성 미보관**: 업로드된 수어 영상과 음성 파일은 인식/변환 직후 즉시 폐기하며
   디스크나 DB에 저장하지 않습니다. Redis에도 원본 미디어는 저장하지 않고, 세션의 텍스트성
-  임시 데이터(질문/답변/토큰 등)만 TTL 2시간으로 보관합니다.
+  임시 데이터(질문/답변/토큰 등)만 TTL 2시간으로 보관합니다. 답변 초안(`session:{id}:drafts`)과
+  인식 결과 목록(`session:{id}:recognitions`)도 라벨/텍스트만 담는 텍스트성 데이터이며 같은
+  TTL로 세션 삭제 시 함께 제거됩니다.
 - **익명 세션**: 세션은 회원가입/로그인 없이 발급되는 익명 토큰(`doctor_token`,
   `patient_token`) 기반으로 동작하며, 세션 종료 시 관련 데이터를 즉시 삭제합니다.
 - **진단·처방 금지**: LLM은 환자가 표현한 수어를 한국어 문장으로 **재구성**하는 역할만
@@ -254,7 +284,8 @@ TalkDoc_BE/
 ├── Dockerfile
 ├── .env.example
 ├── docs/
-│   └── ai-service-contract.md   # TalkDoc-VisionAI(Flask) 연동 계약
+│   ├── ai-service-contract.md   # TalkDoc-VisionAI(Flask) 연동 계약
+│   └── answer-versioning.md     # 질문 버전/답변 초안 필드 단위 계약
 ├── scripts/
 │   ├── e2e.sh                   # curl 기반 E2E 스모크 테스트
 │   └── ws-client.mjs            # WebSocket 이벤트 확인용 CLI

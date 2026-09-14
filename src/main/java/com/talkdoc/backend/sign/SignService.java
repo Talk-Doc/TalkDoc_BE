@@ -4,6 +4,7 @@ import com.talkdoc.backend.ai.SignRecognitionClient;
 import com.talkdoc.backend.ai.model.SignPrediction;
 import com.talkdoc.backend.common.ApiException;
 import com.talkdoc.backend.common.ErrorCode;
+import com.talkdoc.backend.common.IdGenerator;
 import com.talkdoc.backend.config.TalkDocProperties;
 import com.talkdoc.backend.question.Intent;
 import com.talkdoc.backend.question.PendingQuestion;
@@ -14,12 +15,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 
 /**
  * Patient sign-video recognition against TalkDoc-VisionAI ({@code POST /predict}: one word per video).
- * Nothing is stored: the caller (frontend) collects accepted labels across one or more calls and
- * later submits them to /answer/preview or /answer/confirm.
+ * Each recognition made against a pending question is stored as a {@link Recognition} so the patient can
+ * later reference it by id from /answer/preview; the frontend may equally keep collecting raw labels
+ * and submit those to /answer/preview or /answer/confirm.
  */
 @Service
 public class SignService {
@@ -31,13 +34,16 @@ public class SignService {
 
     private final SessionService sessionService;
     private final SignRecognitionClient signRecognitionClient;
+    private final RecognitionRepository recognitionRepository;
     private final TalkDocProperties properties;
 
     public SignService(SessionService sessionService,
                         SignRecognitionClient signRecognitionClient,
+                        RecognitionRepository recognitionRepository,
                         TalkDocProperties properties) {
         this.sessionService = sessionService;
         this.signRecognitionClient = signRecognitionClient;
+        this.recognitionRepository = recognitionRepository;
         this.properties = properties;
     }
 
@@ -62,6 +68,7 @@ public class SignService {
         // candidates 는 프론트 안내용 정보일 뿐, AI 예측을 제한하지 않는다 (AI 계약서 규칙).
         List<String> candidates = Intent.candidatesFor(intents);
         String questionId = currentQuestion == null ? null : currentQuestion.questionId();
+        Integer questionVersion = currentQuestion == null ? null : currentQuestion.version();
 
         byte[] bytes;
         try {
@@ -78,8 +85,36 @@ public class SignService {
         boolean allAccepted = hasLabel && sign.accepted();
         List<String> acceptedLabels = allAccepted ? List.of(sign.label()) : List.of();
 
-        return new SignResponse(questionId, intents, candidates, sign, signs, allAccepted, acceptedLabels,
+        String recognitionId = storeRecognition(sessionId, questionId, questionVersion, sign, prediction);
+
+        return new SignResponse(questionId, questionVersion, recognitionId, intents, candidates, sign, signs,
+                allAccepted, acceptedLabels,
                 prediction.modelVersion(), prediction.requestId(), prediction.processingMs());
+    }
+
+    /**
+     * Persists the recognition so it can be referenced by id later. Returns null (and stores nothing)
+     * when there is no label, or when the caller passed an explicit intent without a pending question —
+     * such a recognition has no question to belong to.
+     */
+    private String storeRecognition(String sessionId, String questionId, Integer questionVersion,
+                                     RecognizedSign sign, SignPrediction prediction) {
+        if (sign.label() == null || questionId == null) {
+            return null;
+        }
+        String recognitionId = IdGenerator.uuid();
+        recognitionRepository.append(sessionId, new Recognition(
+                recognitionId,
+                questionId,
+                questionVersion == null ? 1 : questionVersion,
+                sign.label(),
+                sign.confidence(),
+                sign.accepted(),
+                sign.reason(),
+                prediction.modelVersion(),
+                prediction.requestId(),
+                Instant.now()));
+        return recognitionId;
     }
 
     /**

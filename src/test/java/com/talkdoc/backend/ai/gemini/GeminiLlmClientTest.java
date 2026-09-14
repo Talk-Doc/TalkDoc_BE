@@ -72,8 +72,8 @@ class GeminiLlmClientTest {
         server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
                 .andExpect(jsonPath("$.contents[0].parts[0].text").value(org.hamcrest.Matchers.containsString("배가 아파요.")))
                 .andRespond(withSuccess(candidate("환자는 복부 통증을 호소함."), MediaType.APPLICATION_JSON));
-        List<Conversation> convs = List.of(new Conversation("a1", "q1", "어디가 아파요?",
-                List.of(Intent.BODY_LOCATION), List.of("배", "아프다"), "배가 아파요.", Instant.now()));
+        List<Conversation> convs = List.of(Conversation.confirmed("a1", "q1", "어디가 아파요?",
+                List.of(Intent.BODY_LOCATION), List.of("배", "아프다"), "배가 아파요.", Instant.now(), 1));
         assertThat(llm.summarize(convs)).isEqualTo("환자는 복부 통증을 호소함.");
     }
 

@@ -67,6 +67,6 @@ class AnswerGuardTest {
     }
 
     private static Conversation conv(String answer) {
-        return new Conversation("a", "q", "질문", List.of(Intent.SYMPTOM), List.of(), answer, Instant.now());
+        return Conversation.confirmed("a", "q", "질문", List.of(Intent.SYMPTOM), List.of(), answer, Instant.now(), 1);
     }
 }
