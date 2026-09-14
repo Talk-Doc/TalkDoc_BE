@@ -1,56 +1,85 @@
 package com.talkdoc.backend.ai.mock;
 
 import com.talkdoc.backend.ai.SignRecognitionClient;
-import com.talkdoc.backend.ai.model.SignResult;
-import com.talkdoc.backend.question.Intent;
+import com.talkdoc.backend.ai.model.SignPrediction;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.UUID;
 
 /**
- * Deterministic stand-in for the TalkDoc_AI service.
+ * Deterministic stand-in for the TalkDoc-VisionAI service ({@code POST /predict}): one word per video.
  * <ul>
- *   <li>Prefers ["배", "아프다"] when both are candidates, otherwise the first two candidates (0.94 / 0.91).</li>
- *   <li>Debug override: a mimeType such as {@code video/webm;labels=머리,어지럽다} returns exactly those labels
- *       with confidence 0.9 (labels outside the candidate list are still returned so threshold logic can be tested).</li>
- *   <li>Empty candidates → empty result.</li>
+ *   <li>Default: label "배", confidence 0.94, accepted null, reason THRESHOLD_NOT_CONFIGURED
+ *       (so SignService applies {@code talkdoc.sign.confidence-threshold} itself, like the real server).</li>
+ *   <li>Debug override via the mimeType parameters (quoted values are accepted):
+ *     <ul>
+ *       <li>{@code video/webm;labels=머리} → label 머리, confidence 0.9. With several comma-separated
+ *           labels only the first one is used, because the real service returns one word per video.</li>
+ *       <li>{@code video/webm;labels=머리;confidence=0.5} → that confidence.</li>
+ *       <li>{@code video/webm;reason=INSUFFICIENT_LANDMARKS} → label null, confidence null, accepted false,
+ *           that reason.</li>
+ *     </ul>
+ *   </li>
  * </ul>
  */
 @Component
 @ConditionalOnProperty(prefix = "talkdoc.sign-ai", name = "mode", havingValue = "mock", matchIfMissing = true)
 public class MockSignRecognitionClient implements SignRecognitionClient {
 
-    static final String LABELS_PARAM = ";labels=";
+    static final String LABELS_PARAM = "labels";
+    static final String CONFIDENCE_PARAM = "confidence";
+    static final String REASON_PARAM = "reason";
+
+    public static final String DEFAULT_LABEL = "배";
+    public static final double DEFAULT_CONFIDENCE = 0.94;
+    public static final String THRESHOLD_NOT_CONFIGURED = "THRESHOLD_NOT_CONFIGURED";
+    public static final String MODEL_VERSION = "mock";
 
     @Override
-    public List<SignResult> recognize(byte[] video, String mimeType, List<Intent> intents, List<String> candidates) {
-        if (mimeType != null && mimeType.contains(LABELS_PARAM)) {
-            String spec = mimeType.substring(mimeType.indexOf(LABELS_PARAM) + LABELS_PARAM.length());
-            int end = spec.indexOf(';');
-            if (end >= 0) spec = spec.substring(0, end);
-            spec = spec.strip();
-            if (spec.length() >= 2 && spec.startsWith("\"") && spec.endsWith("\"")) {
-                spec = spec.substring(1, spec.length() - 1); // quoted parameter value
+    public SignPrediction predict(byte[] video, String mimeType, Double durationSeconds) {
+        String requestId = UUID.randomUUID().toString();
+
+        String reason = param(mimeType, REASON_PARAM);
+        if (reason != null && !reason.isBlank()) {
+            return new SignPrediction(requestId, MODEL_VERSION, null, null, false, reason.strip(), 5L);
+        }
+
+        String labels = param(mimeType, LABELS_PARAM);
+        String label = DEFAULT_LABEL;
+        double confidence = DEFAULT_CONFIDENCE;
+        if (labels != null && !labels.isBlank()) {
+            // 실서비스는 영상 1개당 단어 1개만 돌려주므로 첫 번째 라벨만 사용한다.
+            String first = labels.split(",")[0].strip();
+            if (!first.isEmpty()) {
+                label = first;
+                confidence = 0.9;
             }
-            List<SignResult> out = new ArrayList<>();
-            for (String label : spec.split(",")) {
-                if (!label.isBlank()) out.add(new SignResult(label.strip(), 0.9));
+        }
+        String explicitConfidence = param(mimeType, CONFIDENCE_PARAM);
+        if (explicitConfidence != null && !explicitConfidence.isBlank()) {
+            try {
+                confidence = Double.parseDouble(explicitConfidence.strip());
+            } catch (NumberFormatException ignored) {
+                // keep the default
             }
-            return out;
         }
-        if (candidates == null || candidates.isEmpty()) {
-            return List.of();
+        return new SignPrediction(requestId, MODEL_VERSION, label, confidence, null, THRESHOLD_NOT_CONFIGURED, 5L);
+    }
+
+    /** Reads a {@code ;name=value} parameter out of a content type, tolerating quoted values. */
+    private static String param(String mimeType, String name) {
+        if (mimeType == null) return null;
+        String marker = ";" + name + "=";
+        int start = mimeType.indexOf(marker);
+        if (start < 0) return null;
+        String value = mimeType.substring(start + marker.length());
+        int end = value.indexOf(';');
+        if (end >= 0) value = value.substring(0, end);
+        value = value.strip();
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length() - 1); // quoted parameter value
         }
-        if (candidates.contains("배") && candidates.contains("아프다")) {
-            return List.of(new SignResult("배", 0.94), new SignResult("아프다", 0.91));
-        }
-        List<SignResult> out = new ArrayList<>();
-        double[] confidences = {0.94, 0.91};
-        for (int i = 0; i < Math.min(2, candidates.size()); i++) {
-            out.add(new SignResult(candidates.get(i), confidences[i]));
-        }
-        return out;
+        return value;
     }
 }

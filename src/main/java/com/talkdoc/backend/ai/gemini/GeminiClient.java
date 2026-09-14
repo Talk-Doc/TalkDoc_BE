@@ -8,6 +8,7 @@ import com.talkdoc.backend.common.ErrorCode;
 import com.talkdoc.backend.config.TalkDocProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -34,7 +35,9 @@ public class GeminiClient {
 
     private final RestClient restClient;
     private final ObjectMapper mapper;
+    private final String thinkingLevel;
 
+    @Autowired // 생성자가 둘이라 Spring 이 고를 수 있게 명시 (테스트용 패키지 생성자와 구분)
     public GeminiClient(TalkDocProperties properties, RestClient.Builder builder) {
         this(properties, builder, true, true);
     }
@@ -47,12 +50,18 @@ public class GeminiClient {
     GeminiClient(TalkDocProperties properties, RestClient.Builder builder, boolean requireKey, boolean applyTimeouts) {
         TalkDocProperties.Gemini gemini = properties.ai().gemini();
         String apiKey = gemini == null ? null : gemini.apiKey();
+        this.thinkingLevel = gemini == null || gemini.thinkingLevel() == null || gemini.thinkingLevel().isBlank()
+                ? null : gemini.thinkingLevel().strip();
         if (requireKey && (apiKey == null || apiKey.isBlank())) {
             throw new ApiException(ErrorCode.LLM_FAILED,
                     "GEMINI_API_KEY is not set but talkdoc.ai.provider=gemini");
         }
         if (applyTimeouts) {
-            HttpClient httpClient = HttpClient.newBuilder().connectTimeout(properties.ai().timeout()).build();
+            // HTTP/1.1 고정: JDK HttpClient 의 HTTP/2 경로에서 대용량(inline 오디오) 요청이 타임아웃까지 멈추는 경우가 있음
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(properties.ai().timeout())
+                    .build();
             JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
             factory.setReadTimeout(properties.ai().timeout());
             builder.requestFactory(factory);
@@ -72,6 +81,8 @@ public class GeminiClient {
      * @param failureCode error code to raise on any transport/provider failure
      */
     public GeminiResponse generateContent(String model, Map<String, Object> body, ErrorCode failureCode) {
+        body = withThinkingConfig(model, body);
+        long started = System.nanoTime();
         try {
             String raw = restClient.post()
                     .uri("/models/{model}:generateContent", model)
@@ -79,6 +90,8 @@ public class GeminiClient {
                     .body(body)
                     .retrieve()
                     .body(String.class);
+            log.info("Gemini {} ok in {} ms (generationConfig={})", model,
+                    (System.nanoTime() - started) / 1_000_000, body.get("generationConfig"));
             if (raw == null || raw.isBlank()) {
                 throw new ApiException(failureCode, "Gemini returned an empty response");
             }
@@ -92,6 +105,22 @@ public class GeminiClient {
             log.warn("Gemini call failed: model={} reason={}", model, e.getClass().getSimpleName());
             throw new ApiException(failureCode, "Gemini API call failed: " + e.getMessage(), e);
         }
+    }
+
+    /** generationConfig 에 thinkingConfig 가 없으면 설정된 thinkingLevel 을 넣는다 (tts 모델 제외). */
+    Map<String, Object> withThinkingConfig(String model, Map<String, Object> body) {
+        if (thinkingLevel == null || model == null || model.contains("tts")) {
+            return body;
+        }
+        Map<String, Object> out = new LinkedHashMap<>(body);
+        Map<String, Object> config = new LinkedHashMap<>();
+        Object existing = out.get("generationConfig");
+        if (existing instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> config.put(String.valueOf(k), v));
+        }
+        config.putIfAbsent("thinkingConfig", Map.of("thinkingLevel", thinkingLevel));
+        out.put("generationConfig", config);
+        return out;
     }
 
     // ---- request builders -------------------------------------------------------------------

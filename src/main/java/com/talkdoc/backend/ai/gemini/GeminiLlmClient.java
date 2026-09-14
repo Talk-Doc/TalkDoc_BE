@@ -99,7 +99,7 @@ public class GeminiLlmClient implements LlmClient {
                 .replace("{{context}}", renderContext(priorContext));
         Map<String, Object> body = GeminiClient.request(
                 List.of(GeminiClient.textPart(prompt)),
-                Map.of("temperature", 0.2, "maxOutputTokens", 80));
+                Map.of("temperature", 0.2, "maxOutputTokens", 200));
         GeminiResponse response = client.generateContent(model, body, ErrorCode.LLM_FAILED);
         return AnswerGuard.sanitize(response.firstText(), questionText, labels);
     }
@@ -110,7 +110,7 @@ public class GeminiLlmClient implements LlmClient {
         String prompt = summarizeTemplate.replace("{{conversations}}", renderContext(conversations));
         Map<String, Object> body = GeminiClient.request(
                 List.of(GeminiClient.textPart(prompt)),
-                Map.of("temperature", 0.2, "maxOutputTokens", 120));
+                Map.of("temperature", 0.2, "maxOutputTokens", 400));
         GeminiResponse response = client.generateContent(model, body, ErrorCode.LLM_FAILED);
         return AnswerGuard.sanitizeSummary(response.firstText(), conversations);
     }

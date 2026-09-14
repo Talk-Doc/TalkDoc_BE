@@ -32,12 +32,22 @@ public class SignController {
     @RequireRole(Role.PATIENT)
     @Operation(
             summary = "수어 영상 인식",
-            description = "환자가 촬영한 수어 영상을 업로드해 라벨을 인식합니다. intent를 생략하면 현재 대기 중인 " +
-                    "질문의 의도를 사용합니다. 아무것도 저장하지 않습니다. patient_token 필요."
+            description = """
+                    환자가 촬영한 수어 영상(video/webm 또는 video/mp4) 1개를 업로드해 단어 1개를 인식합니다.
+                    여러 단어를 모으려면 단어마다 한 번씩 호출하세요.
+                    duration(선택)은 실제 녹화 길이(초)이며 0 초과 20 이하여야 합니다.
+                    intent를 생략하면 현재 대기 중인 질문의 의도를 사용합니다.
+                    candidates는 참고용이며 인식 결과를 제한하지 않습니다.
+                    accepted=false 이면 재촬영이 필요하고 reason으로 이유를 알려줍니다:
+                    LOW_CONFIDENCE(신뢰도 부족, 다시 촬영),
+                    INSUFFICIENT_LANDMARKS(손·상반신이 보이지 않음, 손과 상반신이 보이도록 다시 촬영).
+                    영상을 해석할 수 없으면 422(SIGN_VIDEO_REJECTED)로 실패합니다.
+                    아무것도 저장하지 않습니다. patient_token 필요."""
     )
     public SignResponse post(@PathVariable String sessionId,
                               @RequestPart("video") MultipartFile video,
-                              @RequestParam(value = "intent", required = false) String intent) {
-        return signService.recognize(sessionId, video, intent);
+                              @RequestParam(value = "intent", required = false) String intent,
+                              @RequestParam(value = "duration", required = false) Double duration) {
+        return signService.recognize(sessionId, video, intent, duration);
     }
 }

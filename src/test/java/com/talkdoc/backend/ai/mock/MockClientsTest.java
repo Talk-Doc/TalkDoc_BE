@@ -1,7 +1,7 @@
 package com.talkdoc.backend.ai.mock;
 
 import com.talkdoc.backend.ai.model.IntentAnalysis;
-import com.talkdoc.backend.ai.model.SignResult;
+import com.talkdoc.backend.ai.model.SignPrediction;
 import com.talkdoc.backend.ai.model.TtsAudio;
 import com.talkdoc.backend.question.Intent;
 import org.junit.jupiter.api.Test;
@@ -37,16 +37,33 @@ class MockClientsTest {
     }
 
     @Test
-    void signMockPrefersDemoPairAndSupportsOverride() {
+    void signMockReturnsOneWordAndSupportsOverrides() {
         MockSignRecognitionClient sign = new MockSignRecognitionClient();
-        List<String> candidates = Intent.candidatesFor(List.of(Intent.BODY_LOCATION, Intent.SYMPTOM));
-        List<SignResult> demo = sign.recognize(new byte[10], "video/webm", List.of(), candidates);
-        assertThat(demo).extracting(SignResult::label).containsExactly("배", "아프다");
-        assertThat(sign.recognize(new byte[10], "video/webm;labels=머리,어지럽다", List.of(), candidates))
-                .extracting(SignResult::label).containsExactly("머리", "어지럽다");
-        assertThat(sign.recognize(new byte[10], "video/webm", List.of(), List.of())).isEmpty();
-        assertThat(sign.recognize(new byte[10], "video/webm", List.of(), List.of("약")))
-                .extracting(SignResult::label).containsExactly("약");
+
+        SignPrediction demo = sign.predict(new byte[10], "video/webm", null);
+        assertThat(demo.label()).isEqualTo("배");
+        assertThat(demo.confidence()).isEqualTo(0.94);
+        assertThat(demo.accepted()).isNull();
+        assertThat(demo.reason()).isEqualTo("THRESHOLD_NOT_CONFIGURED");
+        assertThat(demo.modelVersion()).isEqualTo("mock");
+        assertThat(demo.requestId()).isNotBlank();
+
+        // 영상 1개당 단어 1개: 라벨을 여러 개 줘도 첫 번째만 쓴다
+        SignPrediction override = sign.predict(new byte[10], "video/webm;labels=머리,어지럽다", 3.0);
+        assertThat(override.label()).isEqualTo("머리");
+        assertThat(override.confidence()).isEqualTo(0.9);
+
+        assertThat(sign.predict(new byte[10], "video/webm;labels=\"머리,기침\"", null).label()).isEqualTo("머리");
+
+        SignPrediction lowConfidence = sign.predict(new byte[10], "video/webm;labels=머리;confidence=0.5", null);
+        assertThat(lowConfidence.label()).isEqualTo("머리");
+        assertThat(lowConfidence.confidence()).isEqualTo(0.5);
+
+        SignPrediction noHands = sign.predict(new byte[10], "video/webm;reason=INSUFFICIENT_LANDMARKS", null);
+        assertThat(noHands.label()).isNull();
+        assertThat(noHands.confidence()).isNull();
+        assertThat(noHands.accepted()).isFalse();
+        assertThat(noHands.reason()).isEqualTo("INSUFFICIENT_LANDMARKS");
     }
 
     @Test

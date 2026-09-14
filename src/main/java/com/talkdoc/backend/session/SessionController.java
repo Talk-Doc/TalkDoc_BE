@@ -1,5 +1,6 @@
 package com.talkdoc.backend.session;
 
+import com.talkdoc.backend.auth.AuthenticatedPrincipal;
 import com.talkdoc.backend.auth.RequireRole;
 import com.talkdoc.backend.auth.Role;
 import com.talkdoc.backend.session.dto.CreateSessionResponse;
@@ -41,13 +42,19 @@ public class SessionController {
     }
 
     @GetMapping("/{sessionId}")
-    @RequireRole(Role.DOCTOR)
+    @RequireRole({Role.DOCTOR, Role.PATIENT})
     @Operation(
             summary = "세션 상세 조회",
-            description = "세션 상태, 현재 대기 중인 질문, 확정된 대화 목록을 반환합니다. doctor_token 필요."
+            description = """
+                    세션 상태, 현재 대기 중인 질문(question_version 포함), 확정된 대화 목록을 반환합니다.
+                    확정된 대화에는 의사가 제안한 수정 초안(pending_edit)도 함께 들어갑니다.
+                    patient_token으로 조회하면 현재 질문에 대한 자신의 답변 초안(drafts, status=DRAFT)과
+                    수어 인식 기록(recognitions)이 추가로 내려갑니다.
+                    doctor_token으로 조회하면 drafts/recognitions는 내려가지 않습니다
+                    (확정 전 답변은 의사에게 노출하지 않음). doctor_token 또는 patient_token 필요."""
     )
-    public SessionDetailResponse detail(@PathVariable String sessionId) {
-        return sessionService.detail(sessionId);
+    public SessionDetailResponse detail(@PathVariable String sessionId, AuthenticatedPrincipal principal) {
+        return sessionService.detail(sessionId, principal.role());
     }
 
     @DeleteMapping("/{sessionId}")

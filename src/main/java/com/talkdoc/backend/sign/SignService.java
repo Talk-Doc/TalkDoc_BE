@@ -1,9 +1,10 @@
 package com.talkdoc.backend.sign;
 
 import com.talkdoc.backend.ai.SignRecognitionClient;
-import com.talkdoc.backend.ai.model.SignResult;
+import com.talkdoc.backend.ai.model.SignPrediction;
 import com.talkdoc.backend.common.ApiException;
 import com.talkdoc.backend.common.ErrorCode;
+import com.talkdoc.backend.common.IdGenerator;
 import com.talkdoc.backend.config.TalkDocProperties;
 import com.talkdoc.backend.question.Intent;
 import com.talkdoc.backend.question.PendingQuestion;
@@ -14,28 +15,39 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 
 /**
- * Patient sign-video recognition. Nothing is stored: the caller (frontend) collects accepted
- * labels across one or more calls and later submits them to /answer/preview or /answer/confirm.
+ * Patient sign-video recognition against TalkDoc-VisionAI ({@code POST /predict}: one word per video).
+ * Each recognition made against a pending question is stored as a {@link Recognition} so the patient can
+ * later reference it by id from /answer/preview; the frontend may equally keep collecting raw labels
+ * and submit those to /answer/preview or /answer/confirm.
  */
 @Service
 public class SignService {
 
+    /** Max recording length accepted by the AI service. */
+    static final double MAX_DURATION_SECONDS = 20.0;
+
+    static final String REASON_LOW_CONFIDENCE = "LOW_CONFIDENCE";
+
     private final SessionService sessionService;
     private final SignRecognitionClient signRecognitionClient;
+    private final RecognitionRepository recognitionRepository;
     private final TalkDocProperties properties;
 
     public SignService(SessionService sessionService,
                         SignRecognitionClient signRecognitionClient,
+                        RecognitionRepository recognitionRepository,
                         TalkDocProperties properties) {
         this.sessionService = sessionService;
         this.signRecognitionClient = signRecognitionClient;
+        this.recognitionRepository = recognitionRepository;
         this.properties = properties;
     }
 
-    public SignResponse recognize(String sessionId, MultipartFile video, String intentName) {
+    public SignResponse recognize(String sessionId, MultipartFile video, String intentName, Double durationSeconds) {
         Session session = sessionService.requireActive(sessionId);
 
         if (video == null || video.isEmpty()) {
@@ -45,37 +57,84 @@ public class SignService {
         if (contentType == null || !contentType.startsWith("video/")) {
             throw new ApiException(ErrorCode.UNSUPPORTED_MEDIA);
         }
+        if (durationSeconds != null
+                && (durationSeconds.isNaN() || durationSeconds <= 0 || durationSeconds > MAX_DURATION_SECONDS)) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST,
+                    "duration은 0보다 크고 " + (int) MAX_DURATION_SECONDS + " 이하인 초 단위 값이어야 합니다.");
+        }
 
         PendingQuestion currentQuestion = session.currentQuestion();
         List<Intent> intents = resolveIntents(intentName, currentQuestion);
+        // candidates 는 프론트 안내용 정보일 뿐, AI 예측을 제한하지 않는다 (AI 계약서 규칙).
         List<String> candidates = Intent.candidatesFor(intents);
         String questionId = currentQuestion == null ? null : currentQuestion.questionId();
+        Integer questionVersion = currentQuestion == null ? null : currentQuestion.version();
 
-        List<RecognizedSign> signs;
-        if (candidates.isEmpty()) {
-            signs = List.of();
-        } else {
-            byte[] bytes;
-            try {
-                bytes = video.getBytes();
-            } catch (IOException e) {
-                throw new ApiException(ErrorCode.INVALID_REQUEST, "영상 파일을 읽을 수 없습니다.", e);
-            }
-            List<SignResult> results = signRecognitionClient.recognize(bytes, contentType, intents, candidates);
-            double threshold = properties.sign().confidenceThreshold();
-            signs = results.stream()
-                    .map(r -> new RecognizedSign(r.label(), r.confidence(),
-                            r.confidence() >= threshold && candidates.contains(r.label())))
-                    .toList();
+        byte[] bytes;
+        try {
+            bytes = video.getBytes();
+        } catch (IOException e) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "영상 파일을 읽을 수 없습니다.", e);
         }
 
-        boolean allAccepted = !signs.isEmpty() && signs.stream().allMatch(RecognizedSign::accepted);
-        List<String> acceptedLabels = signs.stream()
-                .filter(RecognizedSign::accepted)
-                .map(RecognizedSign::label)
-                .toList();
+        SignPrediction prediction = signRecognitionClient.predict(bytes, contentType, durationSeconds);
+        RecognizedSign sign = resolve(prediction);
 
-        return new SignResponse(questionId, intents, candidates, signs, allAccepted, acceptedLabels);
+        boolean hasLabel = sign.label() != null;
+        List<RecognizedSign> signs = hasLabel ? List.of(sign) : List.of();
+        boolean allAccepted = hasLabel && sign.accepted();
+        List<String> acceptedLabels = allAccepted ? List.of(sign.label()) : List.of();
+
+        String recognitionId = storeRecognition(sessionId, questionId, questionVersion, sign, prediction);
+
+        return new SignResponse(questionId, questionVersion, recognitionId, intents, candidates, sign, signs,
+                allAccepted, acceptedLabels,
+                prediction.modelVersion(), prediction.requestId(), prediction.processingMs());
+    }
+
+    /**
+     * Persists the recognition so it can be referenced by id later. Returns null (and stores nothing)
+     * when there is no label, or when the caller passed an explicit intent without a pending question —
+     * such a recognition has no question to belong to.
+     */
+    private String storeRecognition(String sessionId, String questionId, Integer questionVersion,
+                                     RecognizedSign sign, SignPrediction prediction) {
+        if (sign.label() == null || questionId == null) {
+            return null;
+        }
+        String recognitionId = IdGenerator.uuid();
+        recognitionRepository.append(sessionId, new Recognition(
+                recognitionId,
+                questionId,
+                questionVersion == null ? 1 : questionVersion,
+                sign.label(),
+                sign.confidence(),
+                sign.accepted(),
+                sign.reason(),
+                prediction.modelVersion(),
+                prediction.requestId(),
+                Instant.now()));
+        return recognitionId;
+    }
+
+    /**
+     * Applies the backend confidence threshold when the AI has none configured
+     * (accepted == null, reason THRESHOLD_NOT_CONFIGURED); otherwise the AI's verdict wins.
+     */
+    private RecognizedSign resolve(SignPrediction prediction) {
+        String label = prediction.label();
+        Double confidence = prediction.confidence();
+        if (label == null) {
+            boolean accepted = Boolean.TRUE.equals(prediction.accepted());
+            return new RecognizedSign(null, confidence, accepted, prediction.reason());
+        }
+        if (prediction.accepted() != null) {
+            boolean accepted = prediction.accepted();
+            return new RecognizedSign(label, confidence, accepted, accepted ? null : prediction.reason());
+        }
+        double threshold = properties.sign().confidenceThreshold();
+        boolean accepted = confidence != null && confidence >= threshold;
+        return new RecognizedSign(label, confidence, accepted, accepted ? null : REASON_LOW_CONFIDENCE);
     }
 
     private List<Intent> resolveIntents(String intentName, PendingQuestion currentQuestion) {

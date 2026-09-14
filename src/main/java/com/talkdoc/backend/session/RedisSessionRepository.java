@@ -105,6 +105,8 @@ public class RedisSessionRepository implements SessionRepository {
         Set<String> keysToDelete = new LinkedHashSet<>();
         keysToDelete.add(sessionKey);
         keysToDelete.add(RedisKeys.conversations(sessionId));
+        keysToDelete.add(RedisKeys.recognitions(sessionId));
+        keysToDelete.add(RedisKeys.drafts(sessionId));
         if (values.get(0) instanceof String doctorToken) {
             keysToDelete.add(RedisKeys.token(doctorToken));
         }
@@ -173,9 +175,14 @@ public class RedisSessionRepository implements SessionRepository {
             redisTemplate.expire(RedisKeys.token(patientToken), ttl);
         }
 
-        String conversationsKey = RedisKeys.conversations(sessionId);
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(conversationsKey))) {
-            redisTemplate.expire(conversationsKey, ttl);
+        expireIfPresent(RedisKeys.conversations(sessionId), ttl);
+        expireIfPresent(RedisKeys.recognitions(sessionId), ttl);
+        expireIfPresent(RedisKeys.drafts(sessionId), ttl);
+    }
+
+    private void expireIfPresent(String key, Duration ttl) {
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+            redisTemplate.expire(key, ttl);
         }
     }
 

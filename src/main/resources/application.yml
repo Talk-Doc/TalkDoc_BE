@@ -37,17 +37,21 @@ talkdoc:
     confidence-threshold: 0.75
   ai:
     provider: ${TALKDOC_AI_PROVIDER:mock}      # mock | gemini
-    timeout: 15s
+    timeout: ${TALKDOC_AI_TIMEOUT:60s}   # STT(오디오 inline)·LLM 응답이 15초를 넘길 수 있음
     gemini:
       api-key: ${GEMINI_API_KEY:}
       base-url: https://generativelanguage.googleapis.com/v1beta
+      thinking-level: ${GEMINI_THINKING_LEVEL:low}   # Gemini 3.x thinking 억제 (기본값이면 호출당 20~30초)
       models:
-        stt: ${GEMINI_STT_MODEL:gemini-2.5-flash}
-        llm: ${GEMINI_LLM_MODEL:gemini-2.5-flash}
+        stt: ${GEMINI_STT_MODEL:gemini-3.7-flash}   # lite 는 STT 정확도가 떨어져 STT 만 상위 모델
+        llm: ${GEMINI_LLM_MODEL:gemini-3.5-flash-lite}
         tts: ${GEMINI_TTS_MODEL:gemini-2.5-flash-preview-tts}
-  sign-ai:
+  sign-ai:                                     # TalkDoc-VisionAI (Flask, POST /predict)
     mode: ${TALKDOC_SIGN_AI_MODE:mock}         # mock | http
-    base-url: ${TALKDOC_SIGN_AI_URL:http://localhost:8000}
-    timeout: 10s
+    base-url: ${TALKDOC_SIGN_AI_URL:http://localhost:5001}
+    connect-timeout: 5s
+    read-timeout: 60s                          # 영상 추론이 수십 초 걸릴 수 있음
+    token: ${TALKDOC_SIGN_AI_TOKEN:}           # 서비스 토큰 (비우면 Authorization 헤더 미전송)
+    max-retries: 2                             # 503 BUSY 시 Retry-After 만큼 대기 후 재시도
   websocket:
     allowed-origins: ${TALKDOC_WS_ORIGINS:*}
