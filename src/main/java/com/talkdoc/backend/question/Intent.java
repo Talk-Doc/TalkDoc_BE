@@ -12,6 +12,8 @@ public enum Intent {
     BODY_LOCATION(List.of("머리", "목", "가슴", "배", "허리", "팔", "다리")),
     SYMPTOM(List.of("아프다", "어지럽다", "기침", "구토", "설사", "숨차다", "답답하다", "붓다")),
     HISTORY_STATE(List.of("약", "알레르기", "감기", "임신", "당뇨병")),
+    /** Fixed-answer question (e.g. "언제부터 아팠어요?"); answered via cards, not signs. See {@link StaticAnswerModeResolver}. */
+    DURATION(List.of()),
     OTHER(List.of());
 
     private final List<String> vocabulary;

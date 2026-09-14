@@ -16,6 +16,7 @@ import java.util.List;
 @ConditionalOnProperty(prefix = "talkdoc.ai", name = "provider", havingValue = "mock", matchIfMissing = true)
 public class MockLlmClient implements LlmClient {
 
+    private static final List<String> DURATION_KEYWORDS = List.of("언제부터", "며칠", "얼마나 됐", "얼마나 되셨", "얼마나 오래");
     private static final List<String> BODY_KEYWORDS = List.of("어디", "부위", "어느 곳", "어느 부분");
     private static final List<String> SYMPTOM_KEYWORDS = List.of("증상", "어떻", "어떤", "아프", "아파", "아픈", "불편");
     private static final List<String> HISTORY_KEYWORDS = List.of("약", "알레르기", "병력", "지병", "임신", "당뇨");
@@ -24,6 +25,12 @@ public class MockLlmClient implements LlmClient {
     public IntentAnalysis analyzeIntent(String questionText) {
         String q = questionText == null ? "" : questionText;
         List<Intent> intents = new ArrayList<>();
+        // DURATION checked first and alone: "언제부터 아팠어요?" also matches SYMPTOM_KEYWORDS ("아프"),
+        // but only the first (primary) intent drives answer_mode, so duration wording must win outright
+        // rather than just being added before the others.
+        if (containsAny(q, DURATION_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.DURATION));
+        }
         if (containsAny(q, BODY_KEYWORDS)) intents.add(Intent.BODY_LOCATION);
         if (containsAny(q, SYMPTOM_KEYWORDS)) intents.add(Intent.SYMPTOM);
         if (containsAny(q, HISTORY_KEYWORDS)) intents.add(Intent.HISTORY_STATE);

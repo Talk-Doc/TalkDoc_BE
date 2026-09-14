@@ -31,17 +31,20 @@ public class QuestionService {
     private final SessionRepository sessionRepository;
     private final SttClient sttClient;
     private final LlmClient llmClient;
+    private final AnswerModeResolver answerModeResolver;
     private final SessionEventPublisher eventPublisher;
 
     public QuestionService(SessionService sessionService,
                             SessionRepository sessionRepository,
                             SttClient sttClient,
                             LlmClient llmClient,
+                            AnswerModeResolver answerModeResolver,
                             SessionEventPublisher eventPublisher) {
         this.sessionService = sessionService;
         this.sessionRepository = sessionRepository;
         this.sttClient = sttClient;
         this.llmClient = llmClient;
+        this.answerModeResolver = answerModeResolver;
         this.eventPublisher = eventPublisher;
     }
 
@@ -56,9 +59,12 @@ public class QuestionService {
             intents = List.of(Intent.OTHER);
         }
         List<String> candidates = Intent.candidatesFor(intents);
+        Intent primaryIntent = intents.get(0);
+        AnswerMode answerMode = answerModeResolver.resolve(primaryIntent, questionText);
+        List<String> cardOptions = answerModeResolver.cardOptions(primaryIntent, questionText);
 
         PendingQuestion question = new PendingQuestion(
-                IdGenerator.uuid(), questionText, intents, candidates, Instant.now());
+                IdGenerator.uuid(), questionText, intents, candidates, answerMode, cardOptions, Instant.now());
 
         sessionRepository.updateCurrentQuestion(sessionId, question);
         eventPublisher.publish(SessionEvent.of(EventType.QUESTION_POSTED, sessionId, question));
