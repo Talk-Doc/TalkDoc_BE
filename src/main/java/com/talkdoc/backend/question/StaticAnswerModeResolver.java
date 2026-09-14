@@ -26,7 +26,13 @@ public class StaticAnswerModeResolver implements AnswerModeResolver {
             Intent.HISTORY_STATE, SIGN_REQUIRED,
             Intent.OTHER, SIGN_REQUIRED,
             Intent.DURATION, new Entry(AnswerMode.CARD_SELECT,
-                    List.of("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상")));
+                    List.of("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상")),
+            Intent.SEVERITY, new Entry(AnswerMode.CARD_SELECT,
+                    List.of("약간", "보통", "심함", "참기 힘듦")),
+            Intent.FREQUENCY, new Entry(AnswerMode.CARD_SELECT,
+                    List.of("계속", "하루 여러 번", "하루 한 번", "가끔")),
+            Intent.YES_NO, new Entry(AnswerMode.CARD_SELECT,
+                    List.of("네", "아니요", "잘 모르겠어요")));
 
     @Override
     public AnswerMode resolve(Intent intent, String questionText) {

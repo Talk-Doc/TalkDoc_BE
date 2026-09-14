@@ -17,6 +17,14 @@ import java.util.List;
 public class MockLlmClient implements LlmClient {
 
     private static final List<String> DURATION_KEYWORDS = List.of("언제부터", "며칠", "얼마나 됐", "얼마나 되셨", "얼마나 오래");
+    private static final List<String> SEVERITY_KEYWORDS = List.of("얼마나 아프", "얼마나 아파", "얼마나 심", "심한가요", "심하세요", "참기 힘들", "통증 정도");
+    private static final List<String> FREQUENCY_KEYWORDS = List.of("얼마나 자주", "몇 번", "자주 그래", "계속 그런");
+    /** Non-medical / identity questions → OTHER before anything else. */
+    private static final List<String> OTHER_KEYWORDS = List.of("성함", "이름", "나이", "주소", "연락처", "보호자", "드셨", "결제", "접수");
+    /** A single named item asked as yes/no ("약 드세요?", "알레르기 있어요?") → YES_NO card. */
+    private static final List<String> YES_NO_ITEMS = List.of("약", "알레르기", "임신", "당뇨", "감기", "수술", "고혈압", "흡연", "음주");
+    /** Open-form history questions ("어떤 지병이 있으세요?") stay HISTORY_STATE. */
+    private static final List<String> OPEN_FORM_KEYWORDS = List.of("어떤", "무슨", "다른", "병력", "지병", "앓고");
     private static final List<String> BODY_KEYWORDS = List.of("어디", "부위", "어느 곳", "어느 부분");
     private static final List<String> SYMPTOM_KEYWORDS = List.of("증상", "어떻", "어떤", "아프", "아파", "아픈", "불편");
     private static final List<String> HISTORY_KEYWORDS = List.of("약", "알레르기", "병력", "지병", "임신", "당뇨");
@@ -28,8 +36,20 @@ public class MockLlmClient implements LlmClient {
         // DURATION checked first and alone: "언제부터 아팠어요?" also matches SYMPTOM_KEYWORDS ("아프"),
         // but only the first (primary) intent drives answer_mode, so duration wording must win outright
         // rather than just being added before the others.
+        if (containsAny(q, OTHER_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.OTHER));
+        }
         if (containsAny(q, DURATION_KEYWORDS)) {
             return new IntentAnalysis(List.of(Intent.DURATION));
+        }
+        if (containsAny(q, SEVERITY_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.SEVERITY));
+        }
+        if (containsAny(q, FREQUENCY_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.FREQUENCY));
+        }
+        if (containsAny(q, YES_NO_ITEMS) && !containsAny(q, OPEN_FORM_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.YES_NO));
         }
         if (containsAny(q, BODY_KEYWORDS)) intents.add(Intent.BODY_LOCATION);
         if (containsAny(q, SYMPTOM_KEYWORDS)) intents.add(Intent.SYMPTOM);

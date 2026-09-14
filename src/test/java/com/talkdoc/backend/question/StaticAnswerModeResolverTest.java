@@ -23,4 +23,17 @@ class StaticAnswerModeResolverTest {
         assertThat(resolver.cardOptions(Intent.DURATION, "언제부터 아팠어요?"))
                 .containsExactly("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상");
     }
+
+    @Test
+    void severityFrequencyYesNo_areCardSelectWithFixedOptions() {
+        assertThat(resolver.resolve(Intent.SEVERITY, "얼마나 아파요?")).isEqualTo(AnswerMode.CARD_SELECT);
+        assertThat(resolver.cardOptions(Intent.SEVERITY, "얼마나 아파요?"))
+                .containsExactly("약간", "보통", "심함", "참기 힘듦");
+        assertThat(resolver.resolve(Intent.FREQUENCY, "얼마나 자주 그래요?")).isEqualTo(AnswerMode.CARD_SELECT);
+        assertThat(resolver.cardOptions(Intent.FREQUENCY, "얼마나 자주 그래요?"))
+                .containsExactly("계속", "하루 여러 번", "하루 한 번", "가끔");
+        assertThat(resolver.resolve(Intent.YES_NO, "약 드세요?")).isEqualTo(AnswerMode.CARD_SELECT);
+        assertThat(resolver.cardOptions(Intent.YES_NO, "약 드세요?"))
+                .containsExactly("네", "아니요", "잘 모르겠어요");
+    }
 }

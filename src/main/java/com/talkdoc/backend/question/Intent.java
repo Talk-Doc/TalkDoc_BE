@@ -9,11 +9,19 @@ import java.util.List;
  * should restrict itself to (context-aware recognition, FR-08 / AI-05).
  */
 public enum Intent {
-    BODY_LOCATION(List.of("머리", "목", "가슴", "배", "허리", "팔", "다리")),
-    SYMPTOM(List.of("아프다", "어지럽다", "기침", "구토", "설사", "숨차다", "답답하다", "붓다")),
-    HISTORY_STATE(List.of("약", "알레르기", "감기", "임신", "당뇨병")),
+    // 수어 어휘는 TalkDoc-VisionAI 모델이 실제로 학습한 15개 단어와 일치시킨다
+    // (가슴·허리·기침·구토·알레르기는 모델에 없어 제외, 2026-09-14 팀 결정).
+    BODY_LOCATION(List.of("머리", "목", "배", "팔", "다리")),
+    SYMPTOM(List.of("아프다", "어지럽다", "설사", "숨차다", "답답하다", "붓다")),
+    HISTORY_STATE(List.of("약", "감기", "임신", "당뇨병")),
     /** Fixed-answer question (e.g. "언제부터 아팠어요?"); answered via cards, not signs. See {@link StaticAnswerModeResolver}. */
     DURATION(List.of()),
+    /** "얼마나 아파요?" — 통증/증상 강도. 카드 선택. */
+    SEVERITY(List.of()),
+    /** "얼마나 자주 그래요?" — 증상 빈도. 카드 선택. */
+    FREQUENCY(List.of()),
+    /** 특정 항목 하나의 유무를 묻는 예/아니오 질문 ("약 드세요?", "임신 중이세요?"). 카드 선택. */
+    YES_NO(List.of()),
     OTHER(List.of());
 
     private final List<String> vocabulary;

@@ -149,7 +149,21 @@ docker compose up -d redis      # 또는 redis-server
 `answer_mode`가 `SIGN_REQUIRED`면 프론트는 수어 촬영 UI를, `CARD_SELECT`면 `card_options`를
 선택 카드로 보여줍니다(옆에 "직접 작성"/"수어로 답변" 전환 버튼 포함). 카드를 고르면
 `/sign`·`/answer/preview` 단계 없이 바로 `/answer/confirm`에 `{"labels": [], "answer": "<카드 문구>"}`로
-확정하면 됩니다. 어떤 Intent가 카드형인지는 `StaticAnswerModeResolver`의 고정 테이블로 정해집니다.
+확정하면 됩니다. 어떤 Intent가 카드형인지와 카드 문구는 `StaticAnswerModeResolver`의 고정 테이블로
+정해집니다(의료진이 고르지 않고 서버가 정함, 2026-09-14 팀 결정). "직접 입력"은 카드 배열에 넣지 않고
+프론트의 전환 버튼으로 둡니다.
+
+| Intent | 예시 질문 | `answer_mode` | `card_options` |
+|--------|-----------|---------------|----------------|
+| `BODY_LOCATION` / `SYMPTOM` / `HISTORY_STATE` | 어디가 아파요? 어떤 증상이 있어요? 지병 있으세요? | `SIGN_REQUIRED` | (없음, 수어 어휘 15개) |
+| `DURATION` | 언제부터 아팠어요? | `CARD_SELECT` | 오늘부터 / 어제부터 / 2~3일 전부터 / 1주일 이상 |
+| `SEVERITY` | 얼마나 아파요? | `CARD_SELECT` | 약간 / 보통 / 심함 / 참기 힘듦 |
+| `FREQUENCY` | 얼마나 자주 그래요? | `CARD_SELECT` | 계속 / 하루 여러 번 / 하루 한 번 / 가끔 |
+| `YES_NO` | 약 드세요? 임신 중이세요? | `CARD_SELECT` | 네 / 아니요 / 잘 모르겠어요 |
+
+수어 어휘는 모델이 학습한 15개(머리·목·배·팔·다리, 아프다·어지럽다·설사·숨차다·답답하다·붓다,
+약·감기·임신·당뇨병)이며, 항목 하나를 콕 집어 유무를 묻는 질문("알레르기 있어요?")은 `YES_NO`
+카드로 처리합니다.
 
 ## 질문 버전과 답변 초안
 
