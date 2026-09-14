@@ -78,7 +78,7 @@ class RedisRepositoriesIntegrationTest {
         Recognition first = recognition("r1", "q1", 1, "배", true);
         Recognition second = recognition("r2", "q1", 1, "아프다", true);
         Recognition otherVersion = recognition("r3", "q1", 2, "머리", true);
-        Recognition rejected = recognition("r4", "q1", 1, "기침", false);
+        Recognition rejected = recognition("r4", "q1", 1, "설사", false);
 
         recognitionRepository.append(sessionId, first);
         recognitionRepository.append(sessionId, second);

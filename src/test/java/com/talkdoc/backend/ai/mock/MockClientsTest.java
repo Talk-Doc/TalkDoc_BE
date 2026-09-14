@@ -33,6 +33,10 @@ class MockClientsTest {
         assertThat(other.candidates()).isEmpty();
         // "아프" would also match the symptom keywords, but duration wording must win outright.
         assertThat(llm.analyzeIntent("언제부터 아팠어요?").intents()).containsExactly(Intent.DURATION);
+        assertThat(llm.analyzeIntent("얼마나 아파요?").intents()).containsExactly(Intent.SEVERITY);
+        assertThat(llm.analyzeIntent("얼마나 자주 그래요?").intents()).containsExactly(Intent.FREQUENCY);
+        // a single item asked as yes/no → card; an open history question stays sign-based.
+        assertThat(llm.analyzeIntent("약 드세요?").intents()).containsExactly(Intent.YES_NO);
         assertThat(llm.composeAnswer("q", List.of("배", "아프다"), List.of())).isEqualTo("배가 아파요.");
     }
 
@@ -53,7 +57,7 @@ class MockClientsTest {
         assertThat(override.label()).isEqualTo("머리");
         assertThat(override.confidence()).isEqualTo(0.9);
 
-        assertThat(sign.predict(new byte[10], "video/webm;labels=\"머리,기침\"", null).label()).isEqualTo("머리");
+        assertThat(sign.predict(new byte[10], "video/webm;labels=\"머리,설사\"", null).label()).isEqualTo("머리");
 
         SignPrediction lowConfidence = sign.predict(new byte[10], "video/webm;labels=머리;confidence=0.5", null);
         assertThat(lowConfidence.label()).isEqualTo("머리");

@@ -17,6 +17,9 @@ import java.util.List;
 public class MockLlmClient implements LlmClient {
 
     private static final List<String> DURATION_KEYWORDS = List.of("언제부터", "며칠", "얼마나 됐", "얼마나 되셨", "얼마나 오래");
+    private static final List<String> SEVERITY_KEYWORDS = List.of("얼마나 아프", "얼마나 아파", "얼마나 심", "심한가요", "심하세요", "참기 힘들", "통증 정도");
+    private static final List<String> FREQUENCY_KEYWORDS = List.of("얼마나 자주", "몇 번", "자주 그래", "계속 그런");
+    private static final List<String> YES_NO_KEYWORDS = List.of("드세요", "드시나요", "하셨나요", "하셨어요", "있으신가요", "중이세요", "맞으세요", "맞나요");
     private static final List<String> BODY_KEYWORDS = List.of("어디", "부위", "어느 곳", "어느 부분");
     private static final List<String> SYMPTOM_KEYWORDS = List.of("증상", "어떻", "어떤", "아프", "아파", "아픈", "불편");
     private static final List<String> HISTORY_KEYWORDS = List.of("약", "알레르기", "병력", "지병", "임신", "당뇨");
@@ -30,6 +33,15 @@ public class MockLlmClient implements LlmClient {
         // rather than just being added before the others.
         if (containsAny(q, DURATION_KEYWORDS)) {
             return new IntentAnalysis(List.of(Intent.DURATION));
+        }
+        if (containsAny(q, SEVERITY_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.SEVERITY));
+        }
+        if (containsAny(q, FREQUENCY_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.FREQUENCY));
+        }
+        if (containsAny(q, YES_NO_KEYWORDS)) {
+            return new IntentAnalysis(List.of(Intent.YES_NO));
         }
         if (containsAny(q, BODY_KEYWORDS)) intents.add(Intent.BODY_LOCATION);
         if (containsAny(q, SYMPTOM_KEYWORDS)) intents.add(Intent.SYMPTOM);

@@ -256,7 +256,7 @@ class IntakeFlowIntegrationTest {
         // mock override: confidence below talkdoc.sign.confidence-threshold (0.75) must not be accepted.
         // The label itself is kept even though it is outside the SYMPTOM candidates: candidates never
         // force-limit the prediction (TalkDoc-VisionAI contract).
-        JsonNode sign = postSign(sessionId, patient, "video/webm;labels=\"머리,기침\";confidence=0.5", null);
+        JsonNode sign = postSign(sessionId, patient, "video/webm;labels=\"머리,설사\";confidence=0.5", null);
         assertThat(sign.get("all_accepted").asBoolean()).isFalse();
         assertThat(toList(sign.get("accepted_labels"))).isEmpty();
         assertThat(sign.get("sign").get("label").asText()).isEqualTo("머리");

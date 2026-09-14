@@ -37,7 +37,7 @@ public class GeminiLlmClient implements LlmClient {
             "properties", Map.of("intents", Map.of(
                     "type", "ARRAY",
                     "items", Map.of("type", "STRING",
-                            "enum", List.of("BODY_LOCATION", "SYMPTOM", "HISTORY_STATE", "DURATION", "OTHER")))),
+                            "enum", List.of("BODY_LOCATION", "SYMPTOM", "HISTORY_STATE", "DURATION", "SEVERITY", "FREQUENCY", "YES_NO", "OTHER")))),
             "required", List.of("intents"));
 
     private final GeminiClient client;
