@@ -27,7 +27,7 @@ class MockClientsTest {
         MockLlmClient llm = new MockLlmClient();
         assertThat(llm.analyzeIntent("어디가 아파서 오셨어요?").intents())
                 .containsExactly(Intent.BODY_LOCATION, Intent.SYMPTOM);
-        assertThat(llm.analyzeIntent("드시는 약 있으세요?").intents()).containsExactly(Intent.HISTORY_STATE);
+        assertThat(llm.analyzeIntent("다른 지병은 없으세요?").intents()).containsExactly(Intent.HISTORY_STATE);
         IntentAnalysis other = llm.analyzeIntent("어제 뭐 드셨어요?");
         assertThat(other.intents()).containsExactly(Intent.OTHER);
         assertThat(other.candidates()).isEmpty();
@@ -37,6 +37,8 @@ class MockClientsTest {
         assertThat(llm.analyzeIntent("얼마나 자주 그래요?").intents()).containsExactly(Intent.FREQUENCY);
         // a single item asked as yes/no → card; an open history question stays sign-based.
         assertThat(llm.analyzeIntent("약 드세요?").intents()).containsExactly(Intent.YES_NO);
+        assertThat(llm.analyzeIntent("알레르기 있으세요?").intents()).containsExactly(Intent.YES_NO);
+        assertThat(llm.analyzeIntent("성함이 어떻게 되세요?").intents()).containsExactly(Intent.OTHER);
         assertThat(llm.composeAnswer("q", List.of("배", "아프다"), List.of())).isEqualTo("배가 아파요.");
     }
 
