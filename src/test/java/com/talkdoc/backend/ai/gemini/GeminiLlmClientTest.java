@@ -28,6 +28,7 @@ class GeminiLlmClientTest {
 
     private MockRestServiceServer server;
     private GeminiLlmClient llm;
+    private GeminiSttClient stt;
 
     @BeforeEach
     void setUp() {
@@ -38,11 +39,12 @@ class GeminiLlmClientTest {
                 new TalkDocProperties.Sign(0.75),
                 new TalkDocProperties.Ai("gemini", Duration.ofSeconds(5),
                         new TalkDocProperties.Gemini("test-key", "https://gemini.test/v1beta",
-                                new TalkDocProperties.Gemini.Models("stt-m", "llm-m", "tts-m"), null)),
+                                new TalkDocProperties.Gemini.Models("stt-m", "stt-fb", "llm-m", "tts-m"), null)),
                 new TalkDocProperties.SignAi("mock", "http://localhost:5001", Duration.ofSeconds(5), Duration.ofSeconds(60), null, 2),
                 new TalkDocProperties.Websocket("*"));
         GeminiClient client = new GeminiClient(props, builder, true, false);
         llm = new GeminiLlmClient(client, props);
+        stt = new GeminiSttClient(client, props);
     }
 
     @Test
@@ -79,8 +81,11 @@ class GeminiLlmClientTest {
 
     @Test
     void providerErrorBecomesLlmFailed() {
-        server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
-                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        // 429 is transient, so the client retries MAX_RETRIES times before giving up.
+        for (int i = 0; i <= GeminiClient.MAX_RETRIES; i++) {
+            server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
+                    .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        }
         assertThatThrownBy(() -> llm.analyzeIntent("q"))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).code()).isEqualTo(ErrorCode.LLM_FAILED);
@@ -94,6 +99,58 @@ class GeminiLlmClientTest {
                 .containsExactly(Intent.HISTORY_STATE);
         assertThat(llm.parseIntents("{\"intents\":[\"DURATION\"]}").intents())
                 .containsExactly(Intent.DURATION);
+    }
+
+    @Test
+    void transientErrorIsRetriedThenSucceeds() {
+        server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).body("{\"error\":{\"code\":503}}"));
+        server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
+                .andRespond(withSuccess(candidate("{\"intents\":[\"SYMPTOM\"]}"), MediaType.APPLICATION_JSON));
+
+        IntentAnalysis analysis = llm.analyzeIntent("어떤 증상이 있으세요?");
+
+        assertThat(analysis.intents()).containsExactly(Intent.SYMPTOM);
+        server.verify();
+    }
+
+    @Test
+    void transientErrorGivesUpAfterMaxRetries() {
+        for (int i = 0; i <= GeminiClient.MAX_RETRIES; i++) {
+            server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
+                    .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        }
+
+        assertThatThrownBy(() -> llm.analyzeIntent("어떤 증상이 있으세요?"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("503");
+        server.verify();
+    }
+
+    @Test
+    void nonTransientErrorIsNotRetried() {
+        server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        assertThatThrownBy(() -> llm.analyzeIntent("어떤 증상이 있으세요?"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("400");
+        server.verify();
+    }
+
+    @Test
+    void sttFallsBackToSecondModelWhenPrimaryKeepsFailing() {
+        for (int i = 0; i <= GeminiClient.MAX_RETRIES; i++) {
+            server.expect(requestTo("https://gemini.test/v1beta/models/stt-m:generateContent"))
+                    .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        }
+        server.expect(requestTo("https://gemini.test/v1beta/models/stt-fb:generateContent"))
+                .andRespond(withSuccess(candidate("어디가 아파서 오셨어요?"), MediaType.APPLICATION_JSON));
+
+        String text = stt.transcribe(new byte[]{1, 2, 3}, "audio/webm;codecs=opus");
+
+        assertThat(text).isEqualTo("어디가 아파서 오셨어요?");
+        server.verify();
     }
 
     private static String candidate(String text) {
