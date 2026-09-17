@@ -34,10 +34,15 @@ public class GeminiLlmClient implements LlmClient {
 
     private static final Map<String, Object> INTENT_SCHEMA = Map.of(
             "type", "OBJECT",
-            "properties", Map.of("intents", Map.of(
-                    "type", "ARRAY",
-                    "items", Map.of("type", "STRING",
-                            "enum", List.of("BODY_LOCATION", "SYMPTOM", "HISTORY_STATE", "DURATION", "SEVERITY", "FREQUENCY", "YES_NO", "OTHER")))),
+            "properties", Map.of(
+                    "intents", Map.of(
+                            "type", "ARRAY",
+                            "items", Map.of("type", "STRING",
+                                    "enum", List.of("BODY_LOCATION", "SYMPTOM", "HISTORY_STATE",
+                                            "DURATION", "SEVERITY", "FREQUENCY", "YES_NO", "CHOICE", "OTHER"))),
+                    "card_options", Map.of(
+                            "type", "ARRAY",
+                            "items", Map.of("type", "STRING"))),
             "required", List.of("intents"));
 
     private final GeminiClient client;
@@ -69,6 +74,7 @@ public class GeminiLlmClient implements LlmClient {
 
     IntentAnalysis parseIntents(String json) {
         List<Intent> intents = new ArrayList<>();
+        List<String> cardOptions = new ArrayList<>();
         try {
             JsonNode node = mapper.readTree(json == null ? "" : json.strip());
             JsonNode arr = node.path("intents");
@@ -82,13 +88,19 @@ public class GeminiLlmClient implements LlmClient {
                     }
                 }
             }
+            JsonNode cards = node.path("card_options");
+            if (cards.isArray()) {
+                for (JsonNode item : cards) cardOptions.add(item.asText());
+            }
         } catch (IOException e) {
             log.warn("Intent JSON unparsable; treating as OTHER");
         }
         boolean hasSupported = intents.stream().anyMatch(Intent::isSupported);
         if (hasSupported) intents.remove(Intent.OTHER);
         if (intents.isEmpty()) intents.add(Intent.OTHER);
-        return new IntentAnalysis(List.copyOf(intents));
+        // LLM 선택지는 CHOICE 일 때만 의미가 있다. 고정표 Intent 에는 서버 표가 우선.
+        if (!intents.contains(Intent.CHOICE)) cardOptions = List.of();
+        return new IntentAnalysis(List.copyOf(intents), cardOptions);
     }
 
     @Override

@@ -23,6 +23,9 @@ public class MockLlmClient implements LlmClient {
     private static final List<String> OTHER_KEYWORDS = List.of("성함", "이름", "나이", "주소", "연락처", "보호자", "드셨", "결제", "접수");
     /** A single named item asked as yes/no ("약 드세요?", "알레르기 있어요?") → YES_NO card. */
     private static final List<String> YES_NO_ITEMS = List.of("약", "알레르기", "임신", "당뇨", "감기", "수술", "고혈압", "흡연", "음주");
+    /** Closed-form questions outside the fixed table → CHOICE with mock-generated cards. */
+    private static final List<String> SIDE_KEYWORDS = List.of("어느 쪽", "왼쪽", "오른쪽");
+    private static final List<String> PAIN_KIND_KEYWORDS = List.of("어떤 느낌", "어떻게 아프", "찌르", "쑤시");
     /** Open-form history questions ("어떤 지병이 있으세요?") stay HISTORY_STATE. */
     private static final List<String> OPEN_FORM_KEYWORDS = List.of("어떤", "무슨", "다른", "병력", "지병", "앓고");
     private static final List<String> BODY_KEYWORDS = List.of("어디", "부위", "어느 곳", "어느 부분");
@@ -50,6 +53,12 @@ public class MockLlmClient implements LlmClient {
         }
         if (containsAny(q, YES_NO_ITEMS) && !containsAny(q, OPEN_FORM_KEYWORDS)) {
             return new IntentAnalysis(List.of(Intent.YES_NO));
+        }
+        if (containsAny(q, SIDE_KEYWORDS)) {
+            return IntentAnalysis.choice(List.of("왼쪽", "오른쪽", "양쪽"));
+        }
+        if (containsAny(q, PAIN_KIND_KEYWORDS)) {
+            return IntentAnalysis.choice(List.of("찌르는 듯", "쑤시는 듯", "쥐어짜는 듯", "욱신거림", "타는 듯"));
         }
         if (containsAny(q, BODY_KEYWORDS)) intents.add(Intent.BODY_LOCATION);
         if (containsAny(q, SYMPTOM_KEYWORDS)) intents.add(Intent.SYMPTOM);
