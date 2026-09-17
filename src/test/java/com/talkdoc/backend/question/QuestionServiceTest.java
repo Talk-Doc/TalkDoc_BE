@@ -187,8 +187,33 @@ class QuestionServiceTest {
 
         assertThat(response.intent()).isEqualTo(Intent.DURATION);
         assertThat(response.answerMode()).isEqualTo(AnswerMode.CARD_SELECT);
-        assertThat(response.cardOptions()).containsExactly("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상");
+        assertThat(response.cardOptions()).containsExactly("오늘부터", "어제부터", "2~3일 전부터", "1주일 전부터", "2주 이상", "한 달 이상");
         assertThat(response.candidates()).isEmpty();
+    }
+
+    @Test
+    void postQuestion_choiceIntent_usesLlmGeneratedCards() {
+        when(llmClient.analyzeIntent("어느 쪽 다리가 아파요?"))
+                .thenReturn(IntentAnalysis.choice(List.of("왼쪽", "오른쪽", "양쪽")));
+
+        QuestionResponse response = questionService.postQuestion(SESSION_ID, null, "어느 쪽 다리가 아파요?");
+
+        assertThat(response.intent()).isEqualTo(Intent.CHOICE);
+        assertThat(response.answerMode()).isEqualTo(AnswerMode.CARD_SELECT);
+        assertThat(response.cardOptions()).containsExactly("왼쪽", "오른쪽", "양쪽");
+        assertThat(response.candidates()).isEmpty();
+    }
+
+    @Test
+    void postQuestion_choiceWithoutEnoughCards_fallsBackToOther() {
+        when(llmClient.analyzeIntent("뭐라고요?")).thenReturn(IntentAnalysis.choice(List.of("네")));
+
+        QuestionResponse response = questionService.postQuestion(SESSION_ID, null, "뭐라고요?");
+
+        assertThat(response.intents()).containsExactly(Intent.OTHER);
+        assertThat(response.answerMode()).isEqualTo(AnswerMode.SIGN_REQUIRED);
+        assertThat(response.cardOptions()).isEmpty();
+        assertThat(response.supported()).isFalse();
     }
 
     // ---- updateQuestion ------------------------------------------------------------------------

@@ -39,6 +39,9 @@ class MockClientsTest {
         assertThat(llm.analyzeIntent("약 드세요?").intents()).containsExactly(Intent.YES_NO);
         assertThat(llm.analyzeIntent("알레르기 있으세요?").intents()).containsExactly(Intent.YES_NO);
         assertThat(llm.analyzeIntent("성함이 어떻게 되세요?").intents()).containsExactly(Intent.OTHER);
+        IntentAnalysis side = llm.analyzeIntent("어느 쪽 다리가 아파요?");
+        assertThat(side.intents()).containsExactly(Intent.CHOICE);
+        assertThat(side.cardOptions()).containsExactly("왼쪽", "오른쪽", "양쪽");
         assertThat(llm.composeAnswer("q", List.of("배", "아프다"), List.of())).isEqualTo("배가 아파요.");
     }
 

@@ -22,6 +22,11 @@ public enum Intent {
     FREQUENCY(List.of()),
     /** 특정 항목 하나의 유무를 묻는 예/아니오 질문 ("약 드세요?", "임신 중이세요?"). 카드 선택. */
     YES_NO(List.of()),
+    /**
+     * 고정표에 없는 객관식 질문("어느 쪽 다리예요?", "통증이 어떤 느낌이에요?"). 선택지는 LLM이 질문마다
+     * 생성해 {@link com.talkdoc.backend.ai.model.IntentAnalysis#cardOptions()}로 전달한다. 카드 선택.
+     */
+    CHOICE(List.of()),
     OTHER(List.of());
 
     private final List<String> vocabulary;

@@ -26,13 +26,15 @@ public class StaticAnswerModeResolver implements AnswerModeResolver {
             Intent.HISTORY_STATE, SIGN_REQUIRED,
             Intent.OTHER, SIGN_REQUIRED,
             Intent.DURATION, new Entry(AnswerMode.CARD_SELECT,
-                    List.of("오늘부터", "어제부터", "2~3일 전부터", "1주일 이상")),
+                    List.of("오늘부터", "어제부터", "2~3일 전부터", "1주일 전부터", "2주 이상", "한 달 이상")),
             Intent.SEVERITY, new Entry(AnswerMode.CARD_SELECT,
-                    List.of("약간", "보통", "심함", "참기 힘듦")),
+                    List.of("거의 없음", "약간", "보통", "심함", "참기 힘듦")),
             Intent.FREQUENCY, new Entry(AnswerMode.CARD_SELECT,
-                    List.of("계속", "하루 여러 번", "하루 한 번", "가끔")),
+                    List.of("계속", "하루 여러 번", "하루 한 번", "이틀에 한 번", "가끔")),
             Intent.YES_NO, new Entry(AnswerMode.CARD_SELECT,
-                    List.of("네", "아니요", "잘 모르겠어요")));
+                    List.of("네", "아니요", "잘 모르겠어요")),
+            // CHOICE 의 실제 선택지는 LLM 이 질문마다 생성한다 (QuestionService 가 IntentAnalysis.cardOptions 로 대체).
+            Intent.CHOICE, new Entry(AnswerMode.CARD_SELECT, List.of()));
 
     @Override
     public AnswerMode resolve(Intent intent, String questionText) {

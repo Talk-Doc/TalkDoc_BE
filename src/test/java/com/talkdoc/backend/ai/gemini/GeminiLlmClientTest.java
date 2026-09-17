@@ -102,6 +102,20 @@ class GeminiLlmClientTest {
     }
 
     @Test
+    void parseIntentsKeepsCardOptionsOnlyForChoice() {
+        IntentAnalysis choice = llm.parseIntents(
+                "{\"intents\":[\"CHOICE\"],\"card_options\":[\"1. 왼쪽\",\" 오른쪽 \",\"왼쪽\",\"\",\"양쪽\"]}");
+        assertThat(choice.intents()).containsExactly(Intent.CHOICE);
+        assertThat(choice.cardOptions()).containsExactly("왼쪽", "오른쪽", "양쪽");
+
+        IntentAnalysis fixed = llm.parseIntents("{\"intents\":[\"DURATION\"],\"card_options\":[\"오늘\",\"어제\"]}");
+        assertThat(fixed.cardOptions()).isEmpty();
+
+        IntentAnalysis tooMany = llm.parseIntents("{\"intents\":[\"CHOICE\"],\"card_options\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\"]}");
+        assertThat(tooMany.cardOptions()).hasSize(IntentAnalysis.MAX_CARD_OPTIONS);
+    }
+
+    @Test
     void transientErrorIsRetriedThenSucceeds() {
         server.expect(requestTo("https://gemini.test/v1beta/models/llm-m:generateContent"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).body("{\"error\":{\"code\":503}}"));

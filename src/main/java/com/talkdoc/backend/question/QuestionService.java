@@ -136,8 +136,19 @@ public class QuestionService {
             intents = List.of(Intent.OTHER);
         }
         Intent primaryIntent = intents.get(0);
+        List<String> cardOptions;
+        if (primaryIntent == Intent.CHOICE) {
+            // 고정표에 없는 객관식: LLM 이 만든 선택지를 쓰고, 하나도 못 만들었으면 지원하지 않는 질문으로 처리한다.
+            cardOptions = analysis.cardOptions();
+            if (cardOptions.size() < 2) {
+                intents = List.of(Intent.OTHER);
+                primaryIntent = Intent.OTHER;
+                cardOptions = List.of();
+            }
+        } else {
+            cardOptions = answerModeResolver.cardOptions(primaryIntent, questionText);
+        }
         AnswerMode answerMode = answerModeResolver.resolve(primaryIntent, questionText);
-        List<String> cardOptions = answerModeResolver.cardOptions(primaryIntent, questionText);
         return new PendingQuestion(question.questionId(), questionText, intents, Intent.candidatesFor(intents),
                 answerMode, cardOptions, question.askedAt(), question.version(), question.updatedAt());
     }
