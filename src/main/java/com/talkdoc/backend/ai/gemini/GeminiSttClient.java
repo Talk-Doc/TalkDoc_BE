@@ -17,12 +17,18 @@ public class GeminiSttClient implements SttClient {
 
     static final String PROMPT = "이 오디오의 한국어 발화를 그대로 받아쓰기 하세요. 받아쓴 문장만 출력하고 다른 말은 하지 마세요.";
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GeminiSttClient.class);
+
     private final GeminiClient client;
     private final String model;
+    private final String fallbackModel;
 
     public GeminiSttClient(GeminiClient client, TalkDocProperties properties) {
         this.client = client;
-        this.model = properties.ai().gemini().models().stt();
+        TalkDocProperties.Gemini.Models models = properties.ai().gemini().models();
+        this.model = models.stt();
+        String fb = models.sttFallback();
+        this.fallbackModel = fb == null || fb.isBlank() || fb.strip().equals(model) ? null : fb.strip();
     }
 
     @Override
@@ -34,7 +40,14 @@ public class GeminiSttClient implements SttClient {
         Map<String, Object> body = GeminiClient.request(
                 List.of(GeminiClient.inlineDataPart(audio, mime), GeminiClient.textPart(PROMPT)),
                 Map.of("temperature", 0));
-        GeminiResponse response = client.generateContent(model, body, ErrorCode.STT_FAILED);
+        GeminiResponse response;
+        try {
+            response = client.generateContent(model, body, ErrorCode.STT_FAILED);
+        } catch (ApiException e) {
+            if (fallbackModel == null) throw e;
+            log.warn("STT model {} failed ({}); falling back to {}", model, e.getMessage(), fallbackModel);
+            response = client.generateContent(fallbackModel, body, ErrorCode.STT_FAILED);
+        }
         String text = response.firstText();
         if (text == null) {
             throw new ApiException(ErrorCode.STT_FAILED, "Gemini returned no transcript");

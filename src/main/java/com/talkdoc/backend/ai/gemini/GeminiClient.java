@@ -33,6 +33,10 @@ public class GeminiClient {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiClient.class);
 
+    /** 429/503 같은 일시 오류에 대한 재시도 횟수와 대기(지수 백오프: 1s, 2s). */
+    static final int MAX_RETRIES = 2;
+    static long BASE_BACKOFF_MS = Long.getLong("talkdoc.gemini.backoff-ms", 1000);
+
     private final RestClient restClient;
     private final ObjectMapper mapper;
     private final String thinkingLevel;
@@ -82,28 +86,52 @@ public class GeminiClient {
      */
     public GeminiResponse generateContent(String model, Map<String, Object> body, ErrorCode failureCode) {
         body = withThinkingConfig(model, body);
-        long started = System.nanoTime();
-        try {
-            String raw = restClient.post()
-                    .uri("/models/{model}:generateContent", model)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
-            log.info("Gemini {} ok in {} ms (generationConfig={})", model,
-                    (System.nanoTime() - started) / 1_000_000, body.get("generationConfig"));
-            if (raw == null || raw.isBlank()) {
-                throw new ApiException(failureCode, "Gemini returned an empty response");
+        for (int attempt = 0; ; attempt++) {
+            long started = System.nanoTime();
+            try {
+                String raw = restClient.post()
+                        .uri("/models/{model}:generateContent", model)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(String.class);
+                log.info("Gemini {} ok in {} ms (generationConfig={})", model,
+                        (System.nanoTime() - started) / 1_000_000, body.get("generationConfig"));
+                if (raw == null || raw.isBlank()) {
+                    throw new ApiException(failureCode, "Gemini returned an empty response");
+                }
+                return mapper.readValue(raw, GeminiResponse.class);
+            } catch (ApiException e) {
+                throw e;
+            } catch (RestClientResponseException e) {
+                int status = e.getStatusCode().value();
+                if (isTransient(status) && attempt < MAX_RETRIES) {
+                    long wait = BASE_BACKOFF_MS * (1L << attempt);
+                    log.warn("Gemini transient failure: model={} status={} attempt={}/{} retrying in {} ms",
+                            model, status, attempt + 1, MAX_RETRIES, wait);
+                    sleep(wait);
+                    continue;
+                }
+                log.warn("Gemini call failed: model={} status={}", model, status);
+                throw new ApiException(failureCode, "Gemini API error " + status
+                        + (status == 503 ? " (모델 과부하, 잠시 후 다시 시도해주세요)" : ""), e);
+            } catch (Exception e) {
+                log.warn("Gemini call failed: model={} reason={}", model, e.getClass().getSimpleName());
+                throw new ApiException(failureCode, "Gemini API call failed: " + e.getMessage(), e);
             }
-            return mapper.readValue(raw, GeminiResponse.class);
-        } catch (ApiException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            log.warn("Gemini call failed: model={} status={}", model, e.getStatusCode().value());
-            throw new ApiException(failureCode, "Gemini API error " + e.getStatusCode().value(), e);
-        } catch (Exception e) {
-            log.warn("Gemini call failed: model={} reason={}", model, e.getClass().getSimpleName());
-            throw new ApiException(failureCode, "Gemini API call failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** 429(rate limit), 500, 502, 503, 504 는 잠시 후 재시도할 가치가 있는 오류. */
+    static boolean isTransient(int status) {
+        return status == 429 || status == 500 || status == 502 || status == 503 || status == 504;
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
